@@ -1,0 +1,10 @@
+# Public administrative place names (not person names): all 75 Uttar Pradesh districts (current and
+# former names), Indian states and large cities. Used only as a guard so that "Gonda ko refer kiya" or
+# "Kanpur se aaye" is never read as a person. Source: public state/district lists; not derived from kit data.
+agra aligarh ambedkarnagar amethi amroha auraiya ayodhya azamgarh baghpat bahraich ballia balrampur banda barabanki bareilly basti bhadohi bijnor budaun badaun bulandshahr
+chandauli chitrakoot deoria etah etawah farrukhabad fatehpur firozabad ghaziabad ghazipur gonda gorakhpur hamirpur hapur hardoi hathras jalaun jaunpur jhansi kannauj kanpur kasganj
+kaushambi kushinagar kheri lakhimpur lalitpur lucknow maharajganj mahoba mainpuri mathura mau meerut mirzapur moradabad muzaffarnagar pilibhit pratapgarh prayagraj raebareli rampur
+saharanpur sambhal shahjahanpur shamli shravasti siddharthnagar sitapur sonbhadra sultanpur unnao varanasi allahabad faizabad noida greater dehat santkabirnagar gautambuddhnagar
+delhi mumbai bombay kolkata calcutta chennai madras bengaluru bangalore hyderabad patna bhopal jaipur dehradun chandigarh indore nagpur pune ahmedabad surat ranchi raipur gwalior jabalpur
+bihar uttarakhand rajasthan punjab haryana maharashtra gujarat bengal odisha orissa assam kerala karnataka telangana jharkhand chhattisgarh himachal kashmir nepal india bharat
+लखनऊ उन्नाव दिल्ली मुंबई कोलकाता पटना भारत

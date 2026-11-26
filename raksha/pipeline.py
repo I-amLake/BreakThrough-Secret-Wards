@@ -268,7 +268,7 @@ class Engine:
             for name in getattr(d, "cued_names", None) or []:
                 for raw in re.findall(r"[A-Za-z]+|[\u0900-\u097F]+", name):
                     if has_devanagari(raw):
-                        if len(raw) >= 3 and self.detector._tok_ok_deva(raw, True):
+                        if len(raw) >= 3 and self.detector._tok_ok_deva(raw, True) and not lex.is_place(raw):
                             f = fold(devanagari_to_latin(raw))
                             if len(f) >= 3 and f not in lex.medical:
                                 learnt.add(f)
@@ -276,7 +276,8 @@ class Engine:
                     if not re.fullmatch(r"[A-Z][a-z]{2,}", raw):
                         continue
                     tl = raw.lower()
-                    if lex.is_common(raw) or lex.is_medical(raw) or tl in lex.ambiguous or tl in lex.honor_pre or tl in lex.honor_suf:
+                    if lex.is_common(raw) or lex.is_medical(raw) or tl in lex.ambiguous or tl in lex.honor_pre or tl in lex.honor_suf \
+                            or lex.is_place(raw):
                         continue
                     learnt.add(fold(tl))
         learnt.discard("")

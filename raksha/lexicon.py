@@ -2,7 +2,7 @@
 import os
 from functools import lru_cache
 
-from .translit import fold
+from .translit import devanagari_to_latin, fold, has_devanagari, skeleton
 
 _DATA = os.path.join(os.path.dirname(__file__), "data")
 
@@ -43,6 +43,9 @@ class Lexicon:
         self.honor_pre = _pairs("honorifics.txt")
         self.honor_suf = _pairs("honorific_suffixes.txt")
         self.common = set(_words("common_words.txt"))
+        self.places = set(_words("places.txt"))
+        self.places_f = {fold(w) for w in self.places} - {""}
+        self.places_sk = {skeleton(w) for w in self.places if len(w) >= 4} - {""}
         # names that also collide with medical/common vocabulary: need context
         self.ambiguous = (self.names & (self.medical | self.stop_latin))
 
@@ -55,6 +58,18 @@ class Lexicon:
     def is_stop(self, tok):
         t = tok.lower().strip(".")
         return t in self.stop_latin or tok in self.stop_hindi
+
+    def is_place(self, tok):
+        """Public place names in either script (Devanagari compared by fold / consonant skeleton)."""
+        t = tok.strip(".")
+        if has_devanagari(t):
+            if t in self.places:
+                return True
+            lat = devanagari_to_latin(t)
+            sk = skeleton(lat)
+            return fold(lat) in self.places_f or (len(sk) >= 3 and sk in self.places_sk)
+        tl = t.lower()
+        return tl in self.places or fold(tl) in self.places_f
 
     def is_common(self, tok):
         t = tok.lower().strip(".")

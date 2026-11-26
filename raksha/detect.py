@@ -9,6 +9,7 @@ Stages (all deterministic, rule + gazetteer based):
                             gazetteer + dataset-learnt lexicon (cross-script), doctor protection
 Overlaps are arbitrated by a fixed priority table.
 """
+
 import re
 
 from .lexicon import get_lexicon
@@ -147,6 +148,24 @@ def label_relation(label):
 RX_REL = re.compile(r"(?<![\w])(?:([SDWHFMCB])\s?[/.\\]\s?[oO]\.?|son of|daughter of|wife of|husband of|father of|mother of|care of|पुत्र|सुपुत्र|पुत्री|सुपुत्री|धर्मपत्नी|पत्नी|पति|पिता|माता)(?![\w\u0900-\u097F])", re.I)
 RX_REL_NOUN = re.compile(r"(?i)\b(wife|husband|son|daughter|father|mother|beta|beti|patni|pati|biwi|bahu|attendant|guardian|relative|bhai|brother|sister|bahan|behen"
                          r"|neighbou?r|caretaker|informant|companion|escort|attender|bystander)\b(?:'s)?\s*(?:name)?\s*(?:(?:was|is|hai|tha|thi|named|called)\s+)?[:\-]?\s*(?=[A-Z\u0900-\u097F])")
+from .namefind import CharNgramScorer, NameFinder, NamePropagator, norm_latin  # noqa: E402
+_RX_PLACE_CTX = re.compile(r"\s+(?:se\s+(?:aa|aay|aaye|aayi|aaya|aai|aaye\s+the|laaye|laya|refer)|ko\s+refer|(?:mein|me|main)\s+(?:rehte|rehti|rahte|rahti|bhej)|tak\s+(?:gaye|gayi)"
+                           r"|से\s+(?:आ|लाए|लाया|रेफर)|को\s+रेफर|में\s+(?:रहत|भेज))", re.I)
+# Structural cues that a weakly-detected word is a complaint/drug, not a person.
+_RX_THING_RIGHT = re.compile(r"\s+(?:ki|ka|की|का)\s+(?:shikayat|shikaayat|takleef|taklif|dose|शिकायत|तकलीफ़?|डोज़?)", re.I)
+_RX_DRUG_LEFT = re.compile(r"(?:\b(?:tab|tabs|tablet|cap|caps|capsule|syp|syrup|inj|injection|oint|ointment|drops?|started|start|continue|stop|stopped)\.?|टैबलेट|गोली|सिरप|इंजेक्शन)\s+$", re.I)
+_RX_KO_LEFT = re.compile(r"(?:\bko|को)\s+$", re.I)
+_RX_COPULA_RIGHT = re.compile(r"\s+(?:hai|tha|thi|ho\s+gay[ai]|है|था|थी|हो\s+गय[ाी])(?![\w\u0900-\u097F])", re.I)
+_WEAK_CUE_MIN_P = 0.3  # min name-classifier probability for an unknown word after a weak Hinglish cue
+_SCORER = []
+
+
+def _shared_scorer():
+    if not _SCORER:
+        _SCORER.append(CharNgramScorer())
+    return _SCORER[0]
+
+_NF_MODE = 2  # 1 = NameFinder, 2 = NameFinder + in-document name propagation
 _NON_KIN = {"neighbour", "neighbor", "caretaker", "informant", "companion", "escort", "attender", "bystander", "attendant", "guardian", "relative"}
 _PLACE_WORDS = {"hospital", "district", "tehsil", "village", "nagar", "pur", "ganj", "road", "colony", "mohalla", "ward", "block",
                 "lucknow", "delhi", "india", "pradesh", "uttar", "bihar", "chc", "phc", "medical", "college", "clinic", "centre", "center"}
@@ -190,6 +209,8 @@ class Detector:
     def __init__(self, dyn_names=None):
         self.lex = get_lexicon()
         self.dyn = dyn_names if dyn_names is not None else set()   # folded tokens learnt from structured data
+        self.scorer = _shared_scorer()
+        self.name_finder = NameFinder(lex=self.lex, scorer=self.scorer) if _NF_MODE else None
 
     # ---------------------------------------------------------------- token helpers
     def _tok_ok_latin(self, tok, lenient):
@@ -222,6 +243,22 @@ class Detector:
         known = f in self.lex.names_f or f in self.dyn
         return known or lenient
 
+    @staticmethod
+    def _weak_negative_context(text, sp):
+        """A weakly-detected single word followed by 'se aaye' / 'ko refer' / 'mein rehte' is a place."""
+        if sp.kind != "NAME" or sp.role not in ("ctx", "morph", "prop") and not sp.meta.get("weak"):
+            return False
+        if _RX_PLACE_CTX.match(text, sp.end) or _RX_THING_RIGHT.match(text, sp.end):
+            return True
+        left = text[max(0, sp.start - 24):sp.start]
+        if _RX_DRUG_LEFT.search(left):
+            return True
+        return bool(_RX_KO_LEFT.search(left) and _RX_COPULA_RIGHT.match(text, sp.end))
+
+    def name_score(self, tok):
+        """Probability that an unknown word is a person name (synthetic-trained char n-gram scorer)."""
+        return self.scorer.prob(norm_latin(tok))
+
     def plausible_name_tok(self, tok):
         """An unknown word that can still be a given name: Titlecase Latin, 3+ letters, and not a
         stop/common/medical word, honorific, unit or place word. Used only next to a name cue."""
@@ -231,6 +268,8 @@ class Detector:
         tl = t.lower()
         lex = self.lex
         if lex.is_common(t) or lex.is_medical(t) or tl in lex.honor_pre or tl in lex.honor_suf:
+            return False
+        if lex.is_place(t):
             return False
         if tl in _PLACE_WORDS or tl in lex.surnames:
             return tl in lex.surnames and not lex.is_surname_only(t)
@@ -410,6 +449,16 @@ class Detector:
         spans.extend(self._label_values(text, norm))
         # D. names
         spans.extend(self._names(text))
+        if _NF_MODE:
+            spans = [sp for sp in spans if not self._weak_negative_context(text, sp)]
+            base = self.resolve(spans)
+            spans.extend(self.name_finder.find(text, existing_spans=base, dyn_names=self.dyn, span_cls=Span))
+            if _NF_MODE >= 2:
+                mid = self.resolve(spans)
+                prop = NamePropagator(lex=self.lex)
+                prop.register_spans(text, mid)
+                spans.extend(prop.propagate(text, existing_spans=mid, span_cls=Span))
+            spans = [sp for sp in spans if not self._weak_negative_context(text, sp)]
         return self.resolve(spans)
 
     # ---------------------------------------------------------------- address parsing
@@ -617,13 +666,16 @@ class Detector:
                 out.append(Span(r[0], r[1], "NAME", text[r[0]:r[1]], role="cued"))
         for m in RX_HINGLISH_ARG.finditer(text):
             w = m.group(1)
-            if self.plausible_name_tok(w) or (self.tok_ok(w, False) and not lex.is_common(w)):
+            known = self.tok_ok(w, False) and not lex.is_common(w)
+            if not known and (lex.is_place(w) or self.name_score(w) < _WEAK_CUE_MIN_P):
+                continue   # "Limcee ki dose", "Gonda ko refer": a weak cue needs a name-shaped word
+            if self.plausible_name_tok(w) or known:
                 st = m.start(1)
                 # "Rukmini Devi ne", "Ram Prakash ko": take one more capitalised token on the left
                 pv = re.search(r"([A-Z][a-z]{2,}) $", text[max(0, st - 30):st])
                 if pv and (self.plausible_name_tok(pv.group(1)) or self.tok_ok(pv.group(1), False)):
                     st -= len(pv.group(0))
-                out.append(Span(st, m.end(1), "NAME", text[st:m.end(1)], role="cued"))
+                out.append(Span(st, m.end(1), "NAME", text[st:m.end(1)], role="cued", meta={"weak": True}))
         # honorific prefixes
         for s, e, w in toks:
             wl = w.rstrip(".").lower()
@@ -634,7 +686,7 @@ class Detector:
                 if r:
                     sx = lex.honor_pre.get(wl, lex.honor_pre.get(w.rstrip("."), "U"))
                     out.append(Span(r[0], r[1], "NAME", text[r[0]:r[1]], role="cued", meta={"sex": sx}))
-        # honorific suffixes  "Arif sahab", "Sunita didi", "रमेश जी"
+        # honorific suffixes  "Thivaresh sahab", "Gonavati didi", "थिवरेश जी"
         for i, (s, e, w) in enumerate(toks):
             wl = w.lower().rstrip(".")
             if (wl in lex.honor_suf or w in lex.honor_suf) and i > 0:
@@ -741,7 +793,7 @@ class Detector:
 
     # ---------------------------------------------------------------- arbitration
     def resolve(self, spans):
-        role_rank = {"patient": 5, "relative": 4, "cued": 3, "gaz": 1, None: 0}
+        role_rank = {"patient": 5, "relative": 4, "cued": 3, "ctx": 2, "morph": 2, "prop": 1, "gaz": 1, None: 0}
         spans = sorted(spans, key=lambda s: (-PRIORITY.get(s.kind, 0), -role_rank.get(s.role, 0), -(s.end - s.start), s.start))
         chosen = []
         occupied = []
