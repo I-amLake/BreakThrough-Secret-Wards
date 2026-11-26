@@ -60,7 +60,7 @@ RX_ABHA_ADDR = re.compile(r"[A-Za-z0-9._]+@(?:abdm|sbx|ndhm)\b", re.I)
 RX_ABHA = re.compile(_NB + r"\d{2}[\s-]\d{4}[\s-]\d{4}[\s-]\d{4}(?![\w])|" + _NB + r"\d{14}(?![\w])")
 RX_AADHAAR = re.compile(_NB + r"[2-9]\d{3}[\s-]?\d{4}[\s-]?\d{4}(?![\w])|(?:[xX*]{4}[\s-]?){2}\d{4}(?![\w])")
 RX_PAN = re.compile(r"(?<![A-Za-z0-9])[A-Za-z]{3}[PCHFATBLJGpchfatbljg][A-Za-z] ?\d{4} ?[A-Za-z](?![A-Za-z0-9])")
-# a labelled PAN-shaped value even when the 4th (entity) letter is not an official one ("PAN ABCRK1234P"),
+# a labelled PAN-shaped value even when the 4th (entity) letter is not an official one ("PAN XYZQB9876C"),
 # and labelled government IDs with no fixed public format (voter ID / EPIC, passport, driving licence, ration card)
 RX_PAN_LABELLED = re.compile(r"(?i)(?<![A-Za-z])(?:pan|p\.a\.n\.?|पैन)(?:\s*(?:no\.?|number|card|कार्ड|नं\.?))?\s*[:#.=\-–]?\s*"
                              r"([A-Za-z]{5} ?\d{4} ?[A-Za-z])(?![A-Za-z0-9])")
@@ -630,9 +630,9 @@ class Detector:
         return (start, end) if start is not None else None
 
     def _extend_given_left(self, text, chosen):
-        """"आशा [वर्मा]", "Asha [Verma]": a known given name standing right before a detected name joins it,
-        even when on its own it is an ordinary word (आशा = hope) that the detector would not take."""
-        for sp in chosen:   # "R Kumar MRN": an all-caps record label is never part of a name
+        """"शोभा [रावत]", "Shobha [Rawat]": a known given name standing right before a detected name joins it,
+        even when on its own it is an ordinary word (e.g. a given name that is also a dictionary word) that the detector would not take."""
+        for sp in chosen:   # "T Rawat MRN": an all-caps record label is never part of a name
             if sp.kind == "NAME":
                 m = _RX_NAME_TAIL_LABEL.search(sp.text)
                 if m and m.start() > 0:
@@ -659,7 +659,7 @@ class Detector:
 
     def _pre_pin_places(self, text, spans, pins):
         """A short run of capitalised place segments right before a PIN with no address cue
-        ("... . Sabzibagh, Patna 800004", "near metro station Sector 15 Noida 201301")."""
+        ("... . Kalyanpur, Jhansi 284001", "near bus stand Sector 9 Ajmer 305001")."""
         out = []
         lex = self.lex
         for p in pins:
@@ -698,7 +698,7 @@ class Detector:
     _RX_WRAP = re.compile(r"(?<=\d)-[ \t]*\r?\n[ \t]*(?=\d)|(?<=@)[ \t]*\r?\n[ \t]*(?=[A-Za-z0-9])|(?<=[A-Za-z0-9._%+-])[ \t]*\r?\n[ \t]*(?=@)")
 
     def _wrapped_ids(self, norm):
-        """Identifiers broken across a line end ("98390-" / "44128", "name@" / "mail.org"): found on a
+        """Identifiers broken across a line end ("99112-" / "33445", "name@" / "mail.org"): found on a
         joined shadow copy and mapped back to the original offsets."""
         if "\n" not in norm or not self._RX_WRAP.search(norm):
             return []
@@ -726,8 +726,8 @@ class Detector:
         return out
 
     def _spelled_ages(self, norm, field_hint=None):
-        """Ages written in words ("forty one years", "baasath saal ke", "बासठ साल की", "अड़सठ वर्षीया",
-        "turns thirty") and bare "(46 yrs)" / "41 saal ka". A number word is an age only in an age frame:
+        """Ages written in words ("seventy two years", "pachpan saal ke", "पचपन साल की", "छियासठ वर्षीया",
+        "turns forty") and bare "(46 yrs)" / "41 saal ka". A number word is an age only in an age frame:
         an age cue before it, an adjectival unit (वर्षीय), unit + ka/ki/ke/old, a bracket, or the whole
         value; "do saal se", "five years back" stay (durations)."""
         from . import numwords
@@ -853,10 +853,10 @@ class Detector:
                 continue
             if _RX_WEAK_ADDR_TRIG.fullmatch(m.group(1).strip().rstrip(".")) and not m.group(0)[len(m.group(1)):].strip(" \t") and \
                     _RX_ADDR_FUNC_NEXT.match(seg):
-                continue   # "gaon mein log ...", "village records", "गांव में": the word, not an address label
+                continue   # "gaon mein sab ...", "village records", "गांव में": the word, not an address label
             en = st + len(seg)
             hn = _RX_HOUSE_NO_BEFORE.search(text[max(0, m.start() - 14):m.start()]) if _RX_WEAK_ADDR_TRIG.fullmatch(m.group(1).strip().rstrip(".")) else None
-            if hn:   # "45 Gali 3 ...": the house number written before the lane / village word
+            if hn:   # "12 Gali 7 ...": the house number written before the lane / village word
                 st = m.start() - (len(text[max(0, m.start() - 14):m.start()]) - hn.start(1))
                 seg = text[st:en]
             spans.append(Span(st, en, "ADDRESS", seg, meta=self.parse_address(seg, m.group(1))))
@@ -1122,7 +1122,7 @@ class Detector:
             r = self._collect_forward(text, toks, m.end() + fw.end(), 2, True)
             if r and all(self.plausible_name_tok(t) or self.tok_ok(t, False) for t in text[r[0]:r[1]].split()):
                 out.append(Span(r[0], r[1], "NAME", text[r[0]:r[1]], role="cued"))
-        # aliases / nicknames: "also known as Raju", "urf Pappu", "pet name Gudiya", "log Raju bulate hain"
+        # aliases / nicknames: "also known as Bittu", "urf Pappu", "pet name Gudiya", "log Tinku bulate hain"
         for m in RX_ALIAS_PRE.finditer(text):
             fw = re.match(r"\s*(?:is|was|hai|:|-|=)?\s*[\"'‘“]?", text[m.end():])
             r = self._collect_forward(text, toks, m.end() + fw.end(), 2, True)

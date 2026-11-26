@@ -1,5 +1,5 @@
-"""Holiday / national-day date anchors ("Republic Day 2025", "born on Independence Day 1962",
-"Holi ke baad", "दिवाली से"). A fixed-date day with a year is a real date: it is shifted like any other
+"""Holiday / national-day date anchors ("Children's Day 2023", "born on Gandhi Jayanti 1958",
+"Lohri ke baad", "दशहरा से"). A fixed-date day with a year is a real date: it is shifted like any other
 date. A movable festival with a year, or any holiday in a temporal frame next to a visit, still dates
 the event (season + year): it becomes [DATE] / [EVENT]. A closed public list, no NLP."""
 import datetime as dt
@@ -36,9 +36,9 @@ def _alt(w):
 
 _NAME = r"(?:" + "|".join(_alt(w) for w in _ALL) + r")"
 _B, _E = r"(?<![\w\u0900-\u097F])", r"(?![\w\u0900-\u097F])"
-# holiday + year ("Holi 2024", "Republic Day, 2025", "Diwali of 2023", "होली 2024")
+# holiday + year ("Lohri 2023", "Christmas, 2022", "Onam of 2021", "होली 2020")
 RX_WITH_YEAR = re.compile(r"(?i)" + _B + r"(" + _NAME + r")" + _E + r"(?:[\s,]+(?:of\s+|in\s+|सन\s+)?|\s*')((?:19|20)\d{2}|\d{2})(?!\d)")
-# holiday in a temporal frame, no year: "since Holi", "after Diwali", "Holi ke baad", "दिवाली से"
+# holiday in a temporal frame, no year: "since Onam", "after Pongal", "Lohri ke baad", "दशहरा से"
 _PRE = r"(?:on|since|after|before|around|during|till|until|from|post|pre|near|over|ahead\s+of|day\s+after|day\s+before)"
 _POST = (r"(?:ke\s+baad|ke\s+pehle|ke\s+pahle|se\s+pehle|se|par|pe|tak|ke\s+aas\s*paas|ke\s+din|wale\s+din|ke\s+time|ke\s+samay|"
          r"के\s+बाद|से\s+पहले|के\s+पहले|से|पर|तक|को|के\s+आसपास|के\s+दिन|वाले\s+दिन)")

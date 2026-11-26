@@ -1,5 +1,5 @@
 """Spelled-out numbers 1-120 in English, Devanagari Hindi and Hinglish (for ages such as
-"forty one years", "baasath saal ke", "बासठ साल की", "अड़सठ वर्षीया")."""
+"seventy two years", "pachpan saal ke", "पचपन साल की", "छियासठ वर्षीया")."""
 import re
 import unicodedata
 

@@ -497,7 +497,7 @@ _MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct",
 
 
 def _date_parts(node, label=""):
-    """A dict that spells one date as sibling fields ({"day": "19", "month": "Mar", "year": "1963"}).
+    """A dict that spells one date as sibling fields ({"day": "07", "month": "Sep", "year": "1961"}).
     Returns (date, is_dob, (kd, km, ky)) or None."""
     if not isinstance(node, dict) or len(node) > 8:
         return None
@@ -864,7 +864,7 @@ def fhir_extract(doc, eng):
     for t in texts:
         spans = eng.detector.detect(t)
         spans_evidence(u, t, [s for s in spans if s.kind not in ("DATE",)], patient_mode=True)
-    # a resource id that is an opaque record code ("RK458921") is the patient's record number in this system
+    # a resource id that is an opaque record code ("AJM772211") is the patient's record number in this system
     for r in pats[:1]:
         rid = str(r.get("id") or "")
         if rid and not _RX_UUID.fullmatch(rid) and (core.opaque_id(rid) or re.fullmatch(r"[A-Za-z]{1,6}[-/]?\d{4,12}", rid)):
