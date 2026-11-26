@@ -1,21 +1,26 @@
 # Raksha privacy policy. Every knob that trades privacy against utility lives here.
-# (raksha/config.py holds identical built-in defaults, used if PyYAML is unavailable.)
+# Read by a built-in YAML-subset reader (no PyYAML needed); raksha/config.py holds identical defaults.
 date_shift:
   min_days: -180        # per-patient keyed shift window (HMAC of the pseudonym); never 0
   max_days: 180
   min_abs_days: 14      # shifts smaller than this are re-drawn
 age:
-  band_widths: [10, 20]      # generalisation level 0 / 1 (suppressed records: 40); every band contains the true age
+  band_widths: [10, 20]      # generalisation level 0 / 1; every band contains the true age
+  suppressed_band_width: 40  # suppressed patients
   topcode: 90                # 90+ collapses into one band
+  # one band per PATIENT: all linked visits print the same band, covering every age seen across them
 location:
   keep_pin3_at_level: -1     # -1 = never release PIN prefixes (registry attackers filter on them); 0 = keep 229XXX at level 0
   keep_district_up_to_level: 1   # suppressed records (level max+1) keep only the state
-  tehsil: suppress           # village, house, locality, landmark, tehsil are never released
+  village_to: district       # village/tehsil/city cells -> the record's own district (truthful, 0.7 in scoring);
+                             # "tehsil" keeps the record's tehsil instead (0.8, but registry attackers filter on it)
+                             # house, locality and landmark are never released
 k_anonymity:
   k: 5
   max_level: 1
   rare_diagnosis_min_level: 1   # a diagnosis seen in < k patients starts at level 1 (20-year bands);
                                 # still unique -> suppressed (40-year band, state only), counted in records_suppressed
+  suppress_below_k: false       # true = also suppress every patient still in a class < k at max_level
 linkage:
   age_veto_years: 3
   phone_degree_cap: 6           # a phone shared by > 6 records (reception desk) is not a blocking key

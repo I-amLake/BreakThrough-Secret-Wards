@@ -1,5 +1,3 @@
-# All optional at runtime (pure-stdlib fallbacks exist and give byte-identical output); pinned for reproducibility.
-# No network use at runtime, no ML models, no LLM / hosted-AI SDKs.
-PyYAML==6.0.4
-RapidFuzz==3.14.6
-charset-normalizer==3.5.3
+# Raksha needs nothing beyond the Python 3.10+ standard library.
+# (Earlier optional packages - PyYAML, RapidFuzz, charset-normalizer - were removed so that the result
+#  is byte-identical on every machine whether or not they are installed.)

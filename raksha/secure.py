@@ -1,4 +1,4 @@
-"""Key handling, keyed pseudonyms, AES-GCM sealing and PII-free logging.
+"""Key handling, keyed pseudonyms and PII-free logging.
 
 Design rules
 * The secret is read only from the RAKSHA_SECRET environment variable and is never logged,
@@ -14,11 +14,6 @@ import os
 import sys
 import time
 
-try:
-    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-except ImportError:  # pragma: no cover
-    AESGCM = None
-
 PSN_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"  # Crockford base32 (no I, L, O, U)
 
 
@@ -33,9 +28,17 @@ def load_secret():
     return s.encode("utf-8")
 
 
-def _hkdf(secret, info, length=32):
-    """RFC 5869 HKDF-SHA256 (stdlib implementation)."""
-    prk = hmac.new(b"raksha-v1", secret, hashlib.sha256).digest()
+HKDF_SALT = b"raksha-v1"  # public, fixed salt (RFC 5869 allows a non-secret salt)
+
+
+def _hkdf(ikm, info, length=32, salt=HKDF_SALT):
+    """RFC 5869 HKDF-SHA256 (stdlib).
+
+    Extract: PRK = HMAC-SHA256(key=salt, msg=IKM)   <- the RFC puts the salt in the key slot and the
+    secret input keying material (here RAKSHA_SECRET) in the message slot; this is not reversed.
+    Expand:  T(i) = HMAC-SHA256(key=PRK, msg=T(i-1) || info || i). Verified against RFC 5869 test case 1
+    in tests/test_guardrails.py."""
+    prk = hmac.new(salt, ikm, hashlib.sha256).digest()
     out, t, i = b"", b"", 1
     while len(out) < length:
         t = hmac.new(prk, t + info + bytes([i]), hashlib.sha256).digest()
@@ -49,7 +52,6 @@ class Keyring:
         self._k_psn = _hkdf(secret_bytes, b"pseudonym")
         self._k_shift = _hkdf(secret_bytes, b"date-shift")
         self._k_tok = _hkdf(secret_bytes, b"token")
-        self._k_enc = os.urandom(32)  # ephemeral spill key: never derived from data, never stored
 
     def _mac(self, key, msg):
         return hmac.new(key, msg.encode("utf-8"), hashlib.sha256).digest()
@@ -76,25 +78,6 @@ class Keyring:
 
     def token(self, kind, value, n=10):
         return self._mac(self._k_tok, kind + "\x00" + value).hex()[:n]
-
-    def sealer(self):
-        return Sealer(self._k_enc)
-
-
-class Sealer:
-    """AES-256-GCM for anything that must touch disk (spill files). Nonce||ciphertext."""
-
-    def __init__(self, key):
-        if AESGCM is None:
-            raise RuntimeError("encrypted spill needs the cryptography package")
-        self._a = AESGCM(key)
-
-    def seal(self, data, aad=b""):
-        nonce = os.urandom(12)
-        return nonce + self._a.encrypt(nonce, data, aad)
-
-    def open(self, blob, aad=b""):
-        return self._a.decrypt(blob[:12], blob[12:], aad)
 
 
 def sha256_bytes(b):

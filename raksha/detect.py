@@ -101,6 +101,7 @@ RX_AGE = [
     re.compile(r"(?<![\d])(\d{1,3})\s?(?:वर्ष|वर्षीय|साल)\s?(?:का|की|के|वर्षीय|पुरुष|महिला)"),
     re.compile(r"(?<![\w/.])(\d{1,3})\s?(?:M|F)\b(?![/\-])"),
 ]
+RX_AGE_NEG = re.compile(r"(?i)\b(?:age[d]?|umar|umr|उम्र|आयु)(?:\s*/\s*(?:sex|gender|ling|लिंग))?\s*[:=(]\s*(-\s?\d{1,3})(?![\d.])")
 RX_SEX = re.compile(r"(?<![\w\u0900-\u097F])((?i:male|female|man|woman|boy|girl|aurat|aadmi)|पुरुष|महिला|स्त्री|लड़का|लड़की)(?![\w\u0900-\u097F])"
                     r"|(?<![\d.])\d{1,3}\s?(?:(?i:y|yr|yrs|years?|वर्ष|साल)\.?)?\s?/\s?([MFmf])\b|(?<![\d.])\d{1,3}\s?([MF])\b(?![\d.])"
                     r"|\b([MF])\s?/\s?\d|(?i:sex|gender|ling|लिंग)\s*[:\-]?\s*([MF])\b")
@@ -144,7 +145,13 @@ def label_relation(label):
 
 
 RX_REL = re.compile(r"(?<![\w])(?:([SDWHFMCB])\s?[/.\\]\s?[oO]\.?|son of|daughter of|wife of|husband of|father of|mother of|care of|पुत्र|सुपुत्र|पुत्री|सुपुत्री|धर्मपत्नी|पत्नी|पति|पिता|माता)(?![\w\u0900-\u097F])", re.I)
-RX_REL_NOUN = re.compile(r"(?i)\b(wife|husband|son|daughter|father|mother|beta|beti|patni|pati|biwi|bahu|attendant|guardian|relative|bhai|brother|sister|bahan|behen)\b\s*(?:name)?\s*[:\-]?\s*(?=[A-Z\u0900-\u097F])")
+RX_REL_NOUN = re.compile(r"(?i)\b(wife|husband|son|daughter|father|mother|beta|beti|patni|pati|biwi|bahu|attendant|guardian|relative|bhai|brother|sister|bahan|behen"
+                         r"|neighbou?r|caretaker|informant|companion|escort|attender|bystander)\b(?:'s)?\s*(?:name)?\s*(?:(?:was|is|hai|tha|thi|named|called)\s+)?[:\-]?\s*(?=[A-Z\u0900-\u097F])")
+_NON_KIN = {"neighbour", "neighbor", "caretaker", "informant", "companion", "escort", "attender", "bystander", "attendant", "guardian", "relative"}
+_PLACE_WORDS = {"hospital", "district", "tehsil", "village", "nagar", "pur", "ganj", "road", "colony", "mohalla", "ward", "block",
+                "lucknow", "delhi", "india", "pradesh", "uttar", "bihar", "chc", "phc", "medical", "college", "clinic", "centre", "center"}
+# Hinglish subject/object markers after a capitalised word: "Subodh ne bataya", "Subodh aur uski wife"
+RX_HINGLISH_ARG = re.compile(r"(?<![\w.'])([A-Z][a-z]{2,})(?=\s+(?:ne|ko|ka|ki|ke|se|aur|bhi|ji|bole|boli|bola)\s+[a-z])")
 RX_REL_POST = re.compile(r"(?i)\s+(?:ki|ke|ka|की|के|का)\s+(wife|patni|biwi|pati|husband|beta|beti|bete|son|daughter|father|mother|maa|papa|bahu|पत्नी|पति|बेटा|बेटी|बेटे|पिता|माता|माँ|बहू)(?![\w\u0900-\u097F])")
 RX_DOCTOR = re.compile(r"(?<![\w])(?:Dr|DR|dr|Doctor|Prof)\.?\s*(?=[A-Z\u0900-\u097F])|(?:डॉ|डा|डॉक्टर)\.?\s*")
 RX_BY_CUE = re.compile(r"(?i)(?<![\w])(?:called|witnessed|raised|brought|accompanied|informed|signed|reported|requested|visited|escorted|consented|filled|registered|attended|countersigned)\s+by\s*:?\s*(?=[A-Z\u0900-\u097F])")
@@ -214,6 +221,20 @@ class Detector:
             return False
         known = f in self.lex.names_f or f in self.dyn
         return known or lenient
+
+    def plausible_name_tok(self, tok):
+        """An unknown word that can still be a given name: Titlecase Latin, 3+ letters, and not a
+        stop/common/medical word, honorific, unit or place word. Used only next to a name cue."""
+        t = tok.rstrip(".")
+        if not re.fullmatch(r"[A-Z][a-z]{2,}", t):
+            return False
+        tl = t.lower()
+        lex = self.lex
+        if lex.is_common(t) or lex.is_medical(t) or tl in lex.honor_pre or tl in lex.honor_suf:
+            return False
+        if tl in _PLACE_WORDS or tl in lex.surnames:
+            return tl in lex.surnames and not lex.is_surname_only(t)
+        return True
 
     def tok_ok(self, tok, lenient):
         if has_devanagari(tok):
@@ -359,8 +380,13 @@ class Detector:
         for rx in RX_AGE:
             for m in rx.finditer(norm):
                 age = int(m.group(1))
+                st = m.start(1)
                 if 0 <= age <= 120:
-                    spans.append(Span(m.start(1), m.end(1), "AGE", str(age), meta={"age": age}))
+                    spans.append(Span(st, m.end(1), "AGE", str(age), meta={"age": age}))
+                elif rx is RX_AGE[0]:   # "Age: 150": implausible -> masked, never a fake band
+                    spans.append(Span(st, m.end(1), "AGE", str(age), meta={"age": None}))
+        for m in RX_AGE_NEG.finditer(norm):   # "Age: -2": a data error; mask sign and digits together
+            spans.append(Span(m.start(1), m.end(1), "AGE", m.group(1), meta={"age": None}))
         # PIN with context
         for m in RX_PIN_CTX.finditer(norm):
             spans.append(Span(m.start(1), m.end(1), "PIN", digits_only(m.group(1))))
@@ -570,7 +596,13 @@ class Detector:
         for m in RX_REL_NOUN.finditer(text):
             r = self._collect_forward(text, toks, m.end(), 3, True)
             if r and (text[r[0]].isupper() or has_devanagari(text[r[0]])):
-                rel, psex = REL_NOUN.get(m.group(1).lower(), ("G", None))
+                noun = m.group(1).lower()
+                if not any(self.plausible_name_tok(t) or self.tok_ok(t, False) for t in text[r[0]:r[1]].split()):
+                    continue
+                if noun in _NON_KIN:   # neighbour, caretaker ...: a person, but not family evidence
+                    out.append(Span(r[0], r[1], "NAME", text[r[0]:r[1]], role="cued"))
+                    continue
+                rel, psex = REL_NOUN.get(noun, ("G", None))
                 out.append(Span(r[0], r[1], "NAME", text[r[0]:r[1]], role="relative", meta={"rel": rel, "psex": psex}))
         # Hinglish postposition "Rajan ki wife"
         for m in RX_REL_POST.finditer(text):
@@ -578,6 +610,20 @@ class Detector:
             if b:
                 rel, psex = REL_POST.get(m.group(1).lower(), REL_POST.get(m.group(1), ("G", None)))
                 out.append(Span(b[0], b[1], "NAME", text[b[0]:b[1]], role="relative", meta={"rel": rel, "psex": psex}))
+            # "Bitto ki maa Ramrati": a capitalised word right after the kin noun names the subject
+            fw = re.match(r"\s*[:\-]?\s*", text[m.end():])
+            r = self._collect_forward(text, toks, m.end() + fw.end(), 2, True)
+            if r and all(self.plausible_name_tok(t) or self.tok_ok(t, False) for t in text[r[0]:r[1]].split()):
+                out.append(Span(r[0], r[1], "NAME", text[r[0]:r[1]], role="cued"))
+        for m in RX_HINGLISH_ARG.finditer(text):
+            w = m.group(1)
+            if self.plausible_name_tok(w) or (self.tok_ok(w, False) and not lex.is_common(w)):
+                st = m.start(1)
+                # "Rukmini Devi ne", "Ram Prakash ko": take one more capitalised token on the left
+                pv = re.search(r"([A-Z][a-z]{2,}) $", text[max(0, st - 30):st])
+                if pv and (self.plausible_name_tok(pv.group(1)) or self.tok_ok(pv.group(1), False)):
+                    st -= len(pv.group(0))
+                out.append(Span(st, m.end(1), "NAME", text[st:m.end(1)], role="cued"))
         # honorific prefixes
         for s, e, w in toks:
             wl = w.rstrip(".").lower()
@@ -653,10 +699,16 @@ class Detector:
                 continue
             # extend backward over initials / capitalised tokens
             j = i
+            # a family name / gendered suffix ("... Devi", "... Yadav", "... Bano") is preceded by the
+            # given name even when that given name is in no gazetteer: accept up to two plausible tokens
+            lead = 2 if (not has_devanagari(wc) and lex.is_surname_only(wc)) else 0
             while j - 1 >= 0 and self._joinable(text, toks[j - 1], toks[j]):
                 pw = toks[j - 1][2]
                 if re.fullmatch(r"[A-Z]\.?|(?:[A-Z]\.){2,3}", pw) or (self.tok_ok(pw, False)):
                     j -= 1
+                elif lead and self.plausible_name_tok(pw):
+                    j -= 1
+                    lead -= 1
                 else:
                     break
             k = i
@@ -665,7 +717,8 @@ class Detector:
                 if has_devanagari(nw):
                     ok = self._tok_ok_deva(nw, True) and has_devanagari(w)
                 else:
-                    ok = self._tok_ok_latin(nw, False) or (nw[:1].isupper() and self._tok_ok_latin(nw, True) and not self.lex.is_stop(nw) and len(nw) > 1)
+                    ok = self._tok_ok_latin(nw, False) or (nw[:1].isupper() and self._tok_ok_latin(nw, True) and not self.lex.is_stop(nw) and len(nw) > 1) \
+                        or (nw[:1].isupper() and lex.is_surname_only(nw))   # "Sarita Kumari", "Fatima Begum"
                 if not ok:
                     break
                 k += 1

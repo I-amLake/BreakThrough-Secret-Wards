@@ -1,0 +1,14 @@
+# General English / Hinglish vocabulary that often appears Capitalised at a sentence start or in headings.
+# Used only to stop the capitalised-token heuristics (surname back-extension, "X ne/ko/aur") from
+# swallowing ordinary words. Contains no person names.
+about above according across admitted admission advised advice after again against all allergy allergies also although always among another any anyone anything around arrived as asked attended
+bed bedside before being below beside best better between both brief brought but came can case cases casualty caution certificate change changed check checked clinic clinical complaint complaints
+condition consent consultant continue continued could counselled course current currently daily date day days department diagnosed diagnosis diet discharge discharged doctor doctors done during
+each early emergency end enquired even evening every examination examined except family female fever final findings first follow followed following for found free from further general given
+good got had has have having he hello her here him his history home hospital how however if impression in inform informed initially inpatient instructed investigation investigations is it
+just kept known lab last later left like male many may medicine medicines might mobile more morning most mother much must my name named next night no none not note noted nothing now nurse
+observation of off old on once one only or other our out outpatient over own past patient patients per phone plan please police post previous procedure provisional public reason received
+recently referred regards relative relatives remarks report reported respected review reviewed right room said same saw seen she should shown sign signed since sir sister so some son soon
+started stable status still subject such summary surgery taken telephone than thanks that the their them then there these they this those though through till to today told treated treatment
+under until up upon urgent very visit visited visitor ward was we well went were what when where which while who whom whose why will with within without would yes yesterday you your
+aap aaj abhi accha achha aur bahut bataya bole bola boli ghar haan hum isko jab kal kuch lekin magar mareez nahi phir sab sabhi subah shaam theek uska uski unka unki unke wahan yahan

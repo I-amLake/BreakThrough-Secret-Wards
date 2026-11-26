@@ -42,6 +42,7 @@ class Lexicon:
         self.stop_hindi = set(_words("stop_hindi.txt"))
         self.honor_pre = _pairs("honorifics.txt")
         self.honor_suf = _pairs("honorific_suffixes.txt")
+        self.common = set(_words("common_words.txt"))
         # names that also collide with medical/common vocabulary: need context
         self.ambiguous = (self.names & (self.medical | self.stop_latin))
 
@@ -54,6 +55,16 @@ class Lexicon:
     def is_stop(self, tok):
         t = tok.lower().strip(".")
         return t in self.stop_latin or tok in self.stop_hindi
+
+    def is_common(self, tok):
+        t = tok.lower().strip(".")
+        return t in self.common or t in self.stop_latin
+
+    def is_surname_only(self, tok):
+        """Family names and gendered name suffixes (Devi, Kumari, Bano, Yadav...) that are not given names."""
+        t = tok.lower().strip(".")
+        f = fold(t)
+        return (t in self.surnames or f in self.sur_f) and t not in self.first and f not in self.first_f
 
     def is_name_latin(self, tok):
         t = tok.lower()

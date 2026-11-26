@@ -15,42 +15,42 @@ import functools
 import math
 from collections import defaultdict
 
-try:
-    from rapidfuzz.distance import JaroWinkler
-except ImportError:  # pragma: no cover - stdlib fallback keeps the CLI runnable anywhere
-    class JaroWinkler:
-        @staticmethod
-        def similarity(a, b):
-            if a == b:
-                return 1.0
-            la, lb = len(a), len(b)
-            if not la or not lb:
-                return 0.0
-            md = max(la, lb) // 2 - 1
-            ma, mb = [False] * la, [False] * lb
-            m = 0
-            for i in range(la):
-                for j in range(max(0, i - md), min(lb, i + md + 1)):
-                    if not mb[j] and a[i] == b[j]:
-                        ma[i] = mb[j] = True
-                        m += 1
-                        break
-            if not m:
-                return 0.0
-            t, k = 0, 0
-            for i in range(la):
-                if ma[i]:
-                    while not mb[k]:
-                        k += 1
-                    t += a[i] != b[k]
-                    k += 1
-            jaro = (m / la + m / lb + (m - t / 2) / m) / 3
-            pre = 0
-            for x, y in zip(a[:4], b[:4]):
-                if x != y:
+
+class JaroWinkler:
+    """Pure-Python Jaro-Winkler. Deliberately the ONLY implementation (no RapidFuzz switch), so the
+    result is identical on every interpreter and with or without optional packages installed."""
+    @staticmethod
+    def similarity(a, b):
+        if a == b:
+            return 1.0
+        la, lb = len(a), len(b)
+        if not la or not lb:
+            return 0.0
+        md = max(la, lb) // 2 - 1
+        ma, mb = [False] * la, [False] * lb
+        m = 0
+        for i in range(la):
+            for j in range(max(0, i - md), min(lb, i + md + 1)):
+                if not mb[j] and a[i] == b[j]:
+                    ma[i] = mb[j] = True
+                    m += 1
                     break
-                pre += 1
-            return jaro + pre * 0.1 * (1 - jaro)
+        if not m:
+            return 0.0
+        t, k = 0, 0
+        for i in range(la):
+            if ma[i]:
+                while not mb[k]:
+                    k += 1
+                t += a[i] != b[k]
+                k += 1
+        jaro = (m / la + m / lb + (m - t / 2) / m) / 3
+        pre = 0
+        for x, y in zip(a[:4], b[:4]):
+            if x != y:
+                break
+            pre += 1
+        return jaro + pre * 0.1 * (1 - jaro)
 
 from .translit import skeleton
 

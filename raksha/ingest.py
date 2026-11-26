@@ -74,13 +74,8 @@ def decode(data):
     except UnicodeDecodeError:
         text = None
     if text is None:
-        try:
-            from charset_normalizer import from_bytes
-            best = from_bytes(data).best()
-            enc = best.encoding if best is not None else None
-        except Exception:
-            enc = None
-        for e in ([enc] if enc else []) + ["cp1252", "latin-1"]:
+        # deterministic legacy chain (no statistical charset guessing: identical on every machine)
+        for e in ("cp1252", "latin-1"):
             try:
                 text = data.decode(e)
                 break

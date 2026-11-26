@@ -28,6 +28,24 @@ def check(cond, msg):
         FAILS.append(msg)
 
 
+def invented_names(n):
+    """Pronounceable given names that exist in no gazetteer (built from syllables, checked below)."""
+    on = ["Ke", "Vi", "Ru", "Ta", "Mo", "Sa", "Pu", "Ga", "Lo", "Ni", "Bha", "Cha", "Dhi", "Ja", "Ya"]
+    mid = ["ran", "lom", "vash", "tri", "dum", "pel", "ksh", "nar", "gul", "bir"]
+    end = ["ita", "esh", "avi", "oti", "unda", "ali", "ika", "ant"]
+    out, i = [], 0
+    while len(out) < n:
+        h = hashlib.sha256(b"raksha-test-%d" % i).digest()
+        w = on[h[0] % len(on)] + mid[h[1] % len(mid)] + end[h[2] % len(end)]
+        if w not in out:
+            out.append(w)
+        i += 1
+    return out
+
+
+UNSEEN = invented_names(8)
+
+
 def build(inp):
     os.makedirs(os.path.join(inp, "registration"))
     os.makedirs(os.path.join(inp, "notes"))
@@ -67,6 +85,20 @@ def build(inp):
                       "period": {"start": "2026-03-01", "end": "2026-03-10"}}}]}
     with open(os.path.join(inp, "fhir", "bundle_x.json"), "w", encoding="utf-8") as f:
         json.dump(bundle, f, indent=1)
+    g = UNSEEN
+    # unseen given names next to surname/suffix, Hinglish and role cues (Grok review findings)
+    with open(os.path.join(inp, "notes", "ward_round_3.txt"), "w", encoding="utf-8") as f:
+        f.write("Ward round note\n%s Devi ko bukhar hai, BP 130/80.\n%s Yadav came with cough for 2 weeks.\n"
+                "%s aur uski wife %s aaye the.\nLater the attendant was %s.\n%s Bano, 30F, admitted for anaemia.\n"
+                "Bitto ki maa %s ne bataya ki dard kam hai.\n%s was advised rest and Tab Paracetamol 500 mg 1-0-1.\n"
+                "Seen by Dr. Anjali Mehrotra.\n" % (g[0], g[1], g[2], g[3], g[4], g[5], g[6], g[2]))
+    # invalid age and one patient seen at 39 and at 40 (two visits, same UHID and phone)
+    with open(os.path.join(inp, "registration", "visits.csv"), "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(["UHID", "Naam", "Ling", "Umar", "Mobile", "Visit Date", "Diagnosis"])
+        w.writerow(["KLX-700201", "Tinku", "M", "-2", "9812300031", "05/01/2026", "Neonatal jaundice"])
+        w.writerow(["KLX-700202", "Vikram Chauhan", "M", "39", "9812300032", "10/01/2025", "Hypertension"])
+        w.writerow(["KLX-700202", "Vikram Chauhan", "M", "40", "9812300032", "12/02/2026", "Hypertension"])
     # truncated JSON containing a canary: must be quarantined, canary must not appear anywhere
     with open(os.path.join(inp, "misc", "broken.json"), "w", encoding="utf-8") as f:
         f.write('{"patient": {"name": "%s", "phone": "9000011111", "notes": "trunc' % CANARY)
@@ -175,6 +207,21 @@ def main():
                             env=env, capture_output=True, text=True)
         check(r4.returncode != 0 and "Kusum" not in r4.stderr + r4.stdout, "missing secret -> non-zero exit, no leak")
         check("alpha-secret" not in text, "secret never written")
+        # unseen names (invented at test time; verify they are in no shipped word list)
+        shipped = " ".join(open(os.path.join(repo, "raksha", "data", fn), encoding="utf-8").read().lower()
+                           for fn in os.listdir(os.path.join(repo, "raksha", "data")))
+        check(not any(n.lower() in shipped for n in UNSEEN), "test names are unseen by the gazetteer")
+        wr = next(open(os.path.join(dp, n), encoding="utf-8").read() for dp, _, fns in os.walk(o1) for n in fns if "ward_round" in n)
+        for n in UNSEEN[:7]:
+            check(n not in wr, "unseen given name %s removed (surname/suffix/Hinglish/role cue, second pass)" % n)
+        check("BP 130/80" in wr and "Paracetamol 500 mg 1-0-1" in wr and "cough for 2 weeks" in wr and "anaemia" in wr,
+              "clinical content around unseen names preserved")
+        vis = list(csv.reader(open(next(os.path.join(dp, n) for dp, _, fns in os.walk(o1) for n in fns if "visits" in n), encoding="utf-8")))
+        ages = [r[3] for r in vis[1:]]
+        check(ages[0] in ("[AGE]", "") and "-" not in ages[0][:1], "negative age not turned into a fake band (%r)" % ages[0])
+        check(ages[1] == ages[2] and re.fullmatch(r"\d+-\d+", ages[1] or "") and
+              int(ages[1].split("-")[0]) <= 39 and int(ages[1].split("-")[1]) >= 40,
+              "same patient at 39 and 40 gets ONE band covering both visits (%s / %s)" % (ages[1], ages[2]))
     finally:
         shutil.rmtree(work, ignore_errors=True)
     print("\n%s (%d failures)" % ("ALL PASS" if not FAILS else "FAILED", len(FAILS)))

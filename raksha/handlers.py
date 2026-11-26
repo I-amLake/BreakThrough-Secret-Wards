@@ -7,7 +7,7 @@ import json
 import re
 
 from . import core
-from .core import Ctx, Unit, add_name, apply_dob, finalize_unit, norm_id, parse_age, parse_sex, render, render_value, rel_from_value, set_age, spans_evidence
+from .core import Ctx, Unit, add_name, apply_dob, band_for, finalize_unit, has_digits, norm_id, parse_age, parse_sex, render, render_value, rel_from_value, set_age, spans_evidence
 from .dates import numeric_order_votes, parse_full
 from .detect import DIGITS, PII_KINDS, digits_only, label_relation, norm_phone
 from .privacy import age_band, pin3
@@ -185,28 +185,35 @@ def rewrite_field(ftype, value, ctx, label, slot, order=None):
     if ftype == "insurance":
         return "[INSURANCE-ID]", 1
     if ftype == "dob":
-        b = age_band(ctx.age, ctx.level, pol) if ctx.age is not None else None
+        b = band_for(ctx, ctx.age)
         return (b if b else "[DOB]"), 1
     if ftype == "age":
         age = parse_age(v)
         if age is None:
-            return value, 0
-        b = age_band(age, ctx.level, pol)
+            # implausible (negative / > 120) or unreadable: never echo digits, never fake a band
+            return ("[AGE]" if has_digits(v) else value), 0
+        b = band_for(ctx, age)
         if is_num:
             return b, 0
-        return re.sub(r"(?<!\d)\d{1,3}(?!\d)", b, v.translate(DIGITS), count=1), 0
+        return re.sub(r"(?<![\d.])\d{1,3}(?![\d.])", b, v.translate(DIGITS), count=1), 0
     if ftype == "pin":
         d = digits_only(v)
         if len(d) == 6 and ctx.level <= pol["pin3_level"]:
             return (int(d[:3]) if is_num else pin3(d)), 1
         return numeric("[PIN]"), 1
-    if ftype in ("village", "tehsil"):
+    if ftype in ("village", "tehsil", "city"):
+        # Truthful generalisation up the administrative chain village -> tehsil -> district: the cell
+        # is replaced by the record's OWN tehsil (policy village_to: tehsil) or district, both read
+        # from the same record. Nothing is invented; with no known parent unit the value is masked.
         dist = ctx.qi.get("district")
+        if ftype == "city" and dist and name_tokens(v) == name_tokens(dist) and ctx.level <= pol["district_level"]:
+            return value, 0
+        teh = ctx.qi.get("_tehsil")
+        if ftype != "tehsil" and teh and pol.get("village_to") == "tehsil" and ctx.level == 0:
+            return teh, 1
         if dist and ctx.level <= pol["district_level"]:
             return dist, 1
         return "[" + ftype.upper() + "]", 1
-    if ftype == "city":
-        return ("[CITY]" if ctx.level >= 1 else v), (1 if ctx.level >= 1 else 0)
     if ftype == "district":
         if ctx.level <= pol["district_level"]:
             return value, 0
@@ -763,7 +770,7 @@ def fhir_rewrite(doc, eng):
                 del r["birthDate"]
                 eng.count_ids(1)
             if u.age is not None:
-                r.setdefault("extension", []).append({"url": "urn:raksha:age-band", "valueString": age_band(u.age, u.level, pol)})
+                r.setdefault("extension", []).append({"url": "urn:raksha:age-band", "valueString": u.band or age_band(u.age, u.level, pol)})
             addrs = []
             for a in r.get("address", []) or []:
                 if not isinstance(a, dict):
@@ -948,6 +955,7 @@ def text_extract(doc, eng):
         u.dx.add(m.group(1).strip().lower()[:80])
     finalize_unit(u, getattr(eng, "ref_year", None))
     doc.name_keymap = {(s.start, s.end): s.meta.get("is_patient") for s in spans if s.kind == "NAME"}
+    doc.cued_names = sorted({s.text for s in spans if s.kind == "NAME" and s.role in ("patient", "relative", "cued")})
     doc.spans = None
     return [u]
 

@@ -11,9 +11,9 @@ from . import core, handlers, ingest
 from .detect import Detector, PII_KINDS
 from .ingest import BinaryFile, EmptyFile, FhirInvalid, GarbledText, Unsupported
 from .linkage import Linker
-from .privacy import Planner
+from .privacy import Planner, band_range
 from .secure import SafeLog, error_category, sha256_bytes
-from .translit import fold, name_tokens
+from .translit import devanagari_to_latin, fold, has_devanagari, name_tokens, skeleton
 
 GENERIC_TOKENS = {"kumar", "devi", "ji", "md", "mohd", "mohammad", "bai", "begum", "bano", "kumari", "singh", "kaur",
                   "lal", "prasad", "ram", "khan", "sahab", "shri", "smt"}
@@ -59,6 +59,8 @@ class Engine:
         self.entities = defaultdict(int)
         self.ids_detected = 0
         self.order_votes = defaultdict(lambda: [0, 0])
+        self.token_df = defaultdict(int)
+        self.n_docs = 0
         self.safe_file_tokens = set()
         self.current_patient_refs = set()
 
@@ -74,8 +76,14 @@ class Engine:
         return toks
 
     def source_order(self, doc):
+        """Day/month order for a file whose own dates are all ambiguous: votes of files from the same
+        source (shared file-name / header tokens such as a hospital code). Words common to most files
+        ("discharge", "summary") are not a source and do not vote; no evidence -> DMY (Indian default)."""
         dv = mv = 0
-        for t in self._source_tokens(doc):
+        cap = max(3, int(0.4 * max(1, self.n_docs)))
+        for t in sorted(self._source_tokens(doc)):
+            if self.token_df.get(t, 0) > cap:
+                continue
             a, b = self.order_votes.get(t, (0, 0))
             dv += a
             mv += b
@@ -183,6 +191,7 @@ class Engine:
                 for el in node:
                     walk(el, parent, depth + 1)
 
+        self.n_docs = len(docs)
         for d in docs:
             if d.status != "ok":
                 continue
@@ -210,6 +219,8 @@ class Engine:
             if d.text:
                 from .dates import numeric_order_votes
                 dv, mv = numeric_order_votes(d.text)
+                for t in self._source_tokens(d):
+                    self.token_df[t] += 1
                 if dv or mv:
                     for t in self._source_tokens(d):
                         self.order_votes[t][0] += dv
@@ -244,6 +255,33 @@ class Engine:
             except Exception as exc:
                 self._quarantine(d, exc)
                 d.units = []
+
+    def learn_names(self, docs):
+        """Second chance for names seen once in a cued context: tokens of free-text names tagged as
+        patient / relative / cued (any script) join the runtime lexicon, so the rewrite pass also
+        catches the same word where it stands alone ("Subodh aur uski wife ..." -> later "Subodh").
+        Only words that cannot be ordinary vocabulary are learnt (3+ letters, Titlecase or Devanagari,
+        not stop/common/medical/ambiguous/honorific)."""
+        lex = self.detector.lex
+        learnt = set()
+        for d in docs:
+            for name in getattr(d, "cued_names", None) or []:
+                for raw in re.findall(r"[A-Za-z]+|[\u0900-\u097F]+", name):
+                    if has_devanagari(raw):
+                        if len(raw) >= 3 and self.detector._tok_ok_deva(raw, True):
+                            f = fold(devanagari_to_latin(raw))
+                            if len(f) >= 3 and f not in lex.medical:
+                                learnt.add(f)
+                        continue
+                    if not re.fullmatch(r"[A-Z][a-z]{2,}", raw):
+                        continue
+                    tl = raw.lower()
+                    if lex.is_common(raw) or lex.is_medical(raw) or tl in lex.ambiguous or tl in lex.honor_pre or tl in lex.honor_suf:
+                        continue
+                    learnt.add(fold(tl))
+        learnt.discard("")
+        self.dyn.update(learnt)
+        return len(learnt)
 
     # ------------------------------------------------------------ pass 2: link + plan
     def link_and_plan(self, docs):
@@ -284,17 +322,34 @@ class Engine:
                     for x in mem:
                         x.qi.setdefault(field, vals[0])
         planner = Planner(self.policy)
-        recs = [{"rid": u.rid, "pkey": u.psn or u.key, "age": u.age, "sex": u.prof.sex, "district": u.qi.get("district"),
-                 "state": u.qi.get("state"), "pin": u.qi.get("pin"), "village": u.qi.get("_village"),
-                 "dx": u.dx, "los": u.los} for u in units]
-        levels = planner.plan(recs)
+        groups = defaultdict(list)
         for u in units:
-            u.level = levels[u.rid]
-        self.risk = planner.risk(recs, levels)
-        self.suppressed = planner.suppressed
-        for u in units:
-            if u.rid in planner.suppressed:
-                u.level = max(u.level, planner.max_level)
+            groups[u.psn or ("unit|" + u.key)].append(u)
+        pats = []
+        for pkey in sorted(groups):
+            mem = groups[pkey]
+            ages = [x.age for x in mem if x.age is not None and 0 <= x.age <= 120]
+            dists = sorted({"".join(skeleton(t) for t in name_tokens(x.qi["district"])) for x in mem if x.qi.get("district")})
+            states = sorted({x.qi.get("state") for x in mem if x.qi.get("state")})
+            pins = sorted({x.qi.get("pin") for x in mem if x.qi.get("pin")})
+            sexes = sorted({x.prof.sex for x in mem if x.prof.sex})
+            pats.append({"pkey": pkey, "amin": min(ages) if ages else None, "amax": max(ages) if ages else None,
+                         "sex": sexes[0] if len(sexes) == 1 else None, "district": "|".join(dists) or None,
+                         "state": "|".join(states) or None, "pin": pins[0] if len(pins) == 1 else None,
+                         "village": next((v for x in mem for v in sorted(x.prof.villages)), None),
+                         "dx": set().union(*[x.dx for x in mem]), "los": tuple(sorted(str(x.los) for x in mem if x.los is not None))})
+        levels = planner.plan(pats)
+        self.risk = planner.risk(pats, levels)
+        self.suppressed = set()
+        for r in pats:
+            lvl = levels[r["pkey"]]
+            band = band_range(r["amin"], r["amax"], lvl, self.policy)
+            for u in groups[r["pkey"]]:
+                u.level = lvl
+                u.band = band
+                u.arange = (r["amin"], r["amax"]) if r["amin"] is not None else None
+                if r["pkey"] in planner.suppressed:
+                    self.suppressed.add(u.rid)
         self.units = units
         self.link_stats = {"clusters": len(clusters), "linked_records": sum(1 for u in units if u.psn)}
 
@@ -428,12 +483,18 @@ class Engine:
                     rec["out"] = u.out
                 if u.rid in self.suppressed:
                     rec["status"] = "suppressed"
-                elif u.level > 0:
+                elif self._generalized(u):
                     rec["status"] = "generalized"
                 lines.append(json.dumps(rec, ensure_ascii=False))
         with open(os.path.join(out_root, "records.jsonl"), "w", encoding="utf-8") as fh:
             fh.write("\n".join(lines) + ("\n" if lines else ""))
         return len(lines)
+
+    @staticmethod
+    def _generalized(u):
+        """A quasi-identifier of this record was released coarsened: exact age/DOB -> band,
+        PIN -> prefix or removed, village/tehsil/address -> district or removed."""
+        return bool(u.age is not None or u.prof.dobs or u.qi.get("pin") or u.prof.villages or u.prof.pins)
 
     def write_report(self, docs, out_root, t0, n_records):
         files = []
@@ -456,7 +517,7 @@ class Engine:
                 "records_processed": n_records,
                 "identifiers_detected": int(self.ids_detected),
                 "records_linked": sum(1 for u in exported if u.psn),
-                "records_generalized": sum(1 for u in exported if u.age is not None or u.qi.get("pin") or u.qi.get("district")),
+                "records_generalized": sum(1 for u in exported if u.rid not in self.suppressed and self._generalized(u)),
                 "records_suppressed": sum(1 for u in exported if u.rid in self.suppressed),
                 "records_quarantined": sum(len(d.units) for d in docs if d.status != "sanitized"),
             },
@@ -480,6 +541,7 @@ def run(input_dir, output_dir, policy, keyring, log):
     log.event("loaded", files=len(docs), quarantined=sum(1 for d in docs if d.status != "ok"))
     eng.harvest(docs)
     eng.extract(docs)
+    eng.learn_names(docs)
     log.event("extracted", records=sum(len(d.units) for d in docs))
     eng.link_and_plan(docs)
     log.event("linked", clusters=eng.link_stats["clusters"], linked=eng.link_stats["linked_records"])

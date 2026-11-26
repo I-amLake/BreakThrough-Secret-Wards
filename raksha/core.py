@@ -21,7 +21,7 @@ ICD_RX = re.compile(r"\b([A-TV-Z]\d{2}(?:\.\d{1,2})?)\b")
 class Unit:
     """One patient-bearing record (CSV row, JSON record, FHIR bundle, text document)."""
     __slots__ = ("loc", "out", "prof", "qi", "dates", "names_raw", "psn", "shift", "level", "rid", "key",
-                 "patient_keys", "age", "ref_date", "dx", "los",
+                 "patient_keys", "age", "ref_date", "dx", "los", "band", "arange",
                  "_name_parts", "_sex_hint", "_adm", "_dis")
 
     def __init__(self, loc, hospital):
@@ -41,6 +41,8 @@ class Unit:
         self.ref_date = None
         self.dx = set()
         self.los = None
+        self.band = None      # patient-level released age band (same string for every visit)
+        self.arange = None    # (min, max) true age of the patient across visits
 
 
 class Ctx:
@@ -56,6 +58,8 @@ class Ctx:
         self.year = year
         self.patient_keys = unit.patient_keys if unit else set()
         self.age = unit.age if unit else None
+        self.band = unit.band if unit else None
+        self.arange = unit.arange if unit else None
         self.qi = unit.qi if unit else {}
         self.psn_used = False
 
@@ -66,13 +70,21 @@ def norm_id(v):
 
 
 def parse_age(v):
-    m = re.search(r"(?<!\d)(\d{1,3})(?!\d)", str(v).translate(DIGITS))
-    if m and int(m.group(1)) <= 120:
+    """Age in years from a cell/phrase, or None when absent or implausible (negative, > 120, 4+ digits)."""
+    t = str(v).translate(DIGITS)
+    m = re.search(r"(?<![\d.])(-\s*)?(\d{1,3})(?![\d.])", t)
+    if m and m.group(1) and not re.search(r"\d\s*$", t[:m.start()]):
+        return None          # "-2": a negative age is a data error, never a real age
+    if m and int(m.group(2)) <= 120:
         txt = str(v).lower()
         if re.search(r"\d\s*(m|mo|mon|months?|महीने|माह)\b", txt) and not re.search(r"/\s*m\b", txt):
             return 0
-        return int(m.group(1))
+        return int(m.group(2))
     return None
+
+
+def has_digits(v):
+    return bool(re.search(r"\d", str(v).translate(DIGITS)))
 
 
 def parse_sex(v):
@@ -211,6 +223,12 @@ def address_repl(meta, ctx, eng):
 
 
 def band_for(ctx, age):
+    """Ages of this unit's patient share ONE band across all visits (so pooled visits cannot be
+    intersected into a narrow range); any other age (a relative's) gets its own band."""
+    if age is None:
+        return None
+    if ctx.band and ctx.arange and ctx.arange[0] <= age <= ctx.arange[1]:
+        return ctx.band
     return age_band(age, ctx.level, ctx.eng.policy)
 
 
@@ -260,7 +278,7 @@ def render(text, spans, ctx):
             rep = ("[DOB: age %s]" % band_for(ctx, age)) if age is not None else "[DOB]"
             ents["DOB"] = ents.get("DOB", 0) + 1
         elif k == "AGE":
-            rep = band_for(ctx, sp.meta.get("age"))
+            rep = band_for(ctx, sp.meta.get("age")) or "[AGE]"
         elif k == "PIN":
             rep = pin3(sp.text) if ctx.level <= eng.policy["pin3_level"] else "[PIN]"
             ents["PIN"] = ents.get("PIN", 0) + 1
