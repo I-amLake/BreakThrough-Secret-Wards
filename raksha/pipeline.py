@@ -3,13 +3,14 @@ import hashlib
 import json
 import os
 import re
+import stat
 import sys
 import time
 from collections import defaultdict
 
 from . import core, handlers, ingest
 from .detect import Detector, PII_KINDS
-from .ingest import BinaryFile, EmptyFile, FhirInvalid, GarbledText, Unsupported
+from .ingest import BinaryFile, EmptyFile, FhirInvalid, GarbledText, UnsafeEntry, Unsupported
 from .linkage import Linker
 from .privacy import Planner, band_range
 from .secure import SafeLog, error_category, sha256_bytes
@@ -56,7 +57,6 @@ class Engine:
         self.dyn = set()
         self.detector = Detector(self.dyn)
         self.entities = defaultdict(int)
-        self.ids_detected = 0
         self.order_votes = defaultdict(lambda: [0, 0])
         self.token_df = defaultdict(int)
         self.n_docs = 0
@@ -64,8 +64,19 @@ class Engine:
         self.current_patient_refs = set()
 
     # ------------------------------------------------------------ helpers used by handlers
-    def count_ids(self, n):
-        self.ids_detected += n
+    def count_ids(self, n, kind="ID"):
+        """Every removed / replaced identifier is counted once, by type, in self.entities;
+        report.json's identifiers_detected is their sum, so the two always agree."""
+        if n > 0:
+            self.entities[kind] += n
+
+    def add_entities(self, ents, n):
+        """Typed counts from a free-text render plus any untyped remainder of its total n."""
+        for k, c in ents.items():
+            self.entities[k] += c
+        extra = n - sum(ents.values())
+        if extra > 0:
+            self.entities["ID"] += extra
 
     def _source_tokens(self, doc):
         toks = set(re.findall(r"[a-z]{4,}", doc.rel.lower()))
@@ -99,7 +110,7 @@ class Engine:
     def doc_year(self, doc):
         m = re.findall(r"(?<!\d)(19\d{2}|20\d{2})(?!\d)", doc.text or "")
         if m:
-            return int(max(set(m), key=m.count))
+            return int(max(sorted(set(m)), key=m.count))
         return self.ref_year
 
     def unit_ctx(self, doc, unit):
@@ -115,8 +126,16 @@ class Engine:
     def load(self, root):
         docs = []
         for rel in ingest.walk(root):
+            full = os.path.join(root, rel)
+            if os.path.islink(full) or not stat.S_ISREG(os.lstat(full).st_mode):
+                d = Doc(rel, b"")
+                d.sha = ingest.unsafe_entry_sha(root, rel)
+                docs.append(d)
+                self._quarantine(d, UnsafeEntry())
+                d.hospital = None
+                continue
             try:
-                data = ingest.read_nofollow(os.path.join(root, rel))
+                data = ingest.read_nofollow(full)
             except OSError:
                 data = b""
             d = Doc(rel, data)
@@ -141,9 +160,6 @@ class Engine:
         return docs
 
     def _quarantine(self, d, exc):
-        if os.environ.get("RAKSHA_DEBUG") == "1":  # developer-only; never set in evaluation
-            import traceback
-            traceback.print_exc()
         d.status = "quarantined"
         d.reason = error_category(exc)
         d.text = None
@@ -237,7 +253,7 @@ class Engine:
         for d in docs:
             if d.text:
                 years += re.findall(r"(?<!\d)(20[0-4]\d)(?!\d)", d.text[:20000])
-        self.ref_year = int(max(set(years), key=years.count)) if years else 2025
+        self.ref_year = int(max(sorted(set(years)), key=years.count)) if years else 2025
         for d in docs:
             if d.status != "ok":
                 continue
@@ -515,7 +531,7 @@ class Engine:
                 "files_sanitized": sum(1 for d in docs if d.status == "sanitized"),
                 "files_quarantined": sum(1 for d in docs if d.status != "sanitized"),
                 "records_processed": n_records,
-                "identifiers_detected": int(self.ids_detected),
+                "identifiers_detected": int(sum(self.entities.values())),
                 "records_linked": sum(1 for u in exported if u.psn),
                 "records_generalized": sum(1 for u in exported if u.rid in self.suppressed or self._generalized(u)),
                 "records_suppressed": 0,  # no record is ever dropped; rare QIs are coarsened instead

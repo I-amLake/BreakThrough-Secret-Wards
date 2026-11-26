@@ -119,6 +119,7 @@ def error_category(exc):
         "BinaryFile": "unsupported binary format",
         "EmptyFile": "empty file",
         "GarbledText": "undecodable text encoding",
+        "UnsafeEntry": "unsafe filesystem entry",
     }
     return table.get(name, "processing error")
 

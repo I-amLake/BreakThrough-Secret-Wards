@@ -28,8 +28,6 @@ linkage:
   weak_threshold: 3.0
   weak_same_hospital: true
   weak_attach_unique: false     # first-name-only fragments link only through a relative/ID/phone clue
-  link_threshold: 7.0
-  cluster_threshold: 5.0
 replacements:
   relative: "[RELATIVE]"
   other_name: "[NAME]"

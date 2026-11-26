@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Local evaluation on synthetic data from scripts/gen_data.py (never on hidden data).
+"""Local evaluation on synthetic data from dev_eval/gen_data.py (never on hidden data).
 
 Runs main.py twice with one secret and once with another, then reports:
   PII leak rate (by type of surface), canary hits, clinical preservation, pairwise linkage P/R/F0.5,
   length-of-stay preservation, determinism, secret sensitivity, and a simple registry attacker
   (mean 1/|candidates| over released sex + age band + district, vs. raw exact age).
 
-    python scripts/gen_data.py --out /tmp/synth && python scripts/evaluate.py --data /tmp/synth
+    python dev_eval/gen_data.py --out /tmp/synth && python dev_eval/evaluate.py --data /tmp/synth
 """
 import argparse
 import datetime as dt

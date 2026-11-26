@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Minimal output-contract validator (mirrors docs/SPEC.md of the Secret Wards kit).
 
-    python scripts/validate_output.py --input IN --output OUT
+    python dev_eval/validate_output.py --input IN --output OUT
 Prints CONTRACT OK or the list of problems.
 """
 import argparse

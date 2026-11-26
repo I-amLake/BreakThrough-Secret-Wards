@@ -4,10 +4,10 @@
   phones, government/hospital IDs, birth-year estimate, sex, PIN/district, hospital).
 * Multi-key blocking: strong IDs, phone, (rarest name skeleton, sex), (given name, relative name).
 * Pairwise score = Fellegi-Sunter style log-odds sum with IDF-weighted name agreement and
-  HARD VETOES (different Aadhaar/ABHA/PAN, opposite sex, birth years > 4 apart, different
-  spouse/parent with clearly different names, different UHID in the same hospital).
-* Clustering: edges sorted deterministically; two clusters merge only if no cross pair is vetoed
-  and the average cross score stays above the cluster threshold (no transitive bridging).
+  HARD VETOES (different Aadhaar/ABHA/PAN, opposite sex, birth years more than age_veto_years (3) apart, different
+  spouse/parent with clearly different names, conflicting DOB).
+* Clustering: linkable edges in descending score order (deterministic ties); two clusters merge only
+  if NO cross pair between them is vetoed (complete-link veto check: no transitive bridging).
 * Weak fragments (first name only, nothing else) attach only to exactly ONE compatible cluster in
   the same hospital; otherwise they get patient = null.
 """
@@ -328,7 +328,6 @@ class Linker:
                     vetoed.add(k)
             return k in vetoed
 
-        cl_thr = self.p["cluster_threshold"]
         for negsc, a, b in edges():
             ra, rb = find(a), find(b)
             if ra == rb:

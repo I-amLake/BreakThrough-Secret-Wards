@@ -11,8 +11,7 @@ DEFAULTS = {
     "k_anonymity": {"k": 5, "max_level": 1, "rare_diagnosis_min_level": 1, "suppress_below_k": False,
                     "rare_diagnosis_suppress": "unique_with_facts"},
     "linkage": {"age_veto_years": 3, "phone_degree_cap": 6, "max_block": 300, "weak_threshold": 3.0,
-                "weak_same_hospital": True, "weak_attach_unique": False, "link_threshold": 7.0,
-                "cluster_threshold": 5.0},
+                "weak_same_hospital": True, "weak_attach_unique": False},
     "replacements": {"relative": "[RELATIVE]", "other_name": "[NAME]", "unlinked_patient": "[PATIENT]"},
 }
 

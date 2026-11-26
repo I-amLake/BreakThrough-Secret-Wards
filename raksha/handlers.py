@@ -132,12 +132,29 @@ def end_unit(u, eng):
     if u._adm and not u.ref_date:
         u.ref_date = u._adm
     finalize_unit(u, getattr(eng, "ref_year", None))
-    for a in ("_name_parts", "_sex_hint", "_adm", "_dis"):
-        pass
     return u
 
 
+_FIELD_ENTITY = {"name": "PATIENT_NAME", "first_name": "PATIENT_NAME", "last_name": "PATIENT_NAME",
+                 "relative": "RELATIVE_NAME", "phone": "PHONE", "contact": "PHONE", "mrn": "MRN", "aadhaar": "AADHAAR",
+                 "abha": "ABHA", "pan": "PAN", "email": "EMAIL", "insurance": "INSURANCE_ID", "dob": "DOB",
+                 "address": "ADDRESS", "village": "ADDRESS", "tehsil": "ADDRESS", "pin": "PIN", "date": "DATE", "age": "AGE"}
+
+
 def rewrite_field(ftype, value, ctx, label, slot, order=None):
+    """Return (sanitised value, n) for a structured field and account the n identifiers in
+    eng.entities (typed spans found inside the value keep their own type; the rest get the field's)."""
+    ents = ctx.eng.entities
+    before = sum(ents.values())
+    nv, n = _rewrite_field(ftype, value, ctx, label, slot, order)
+    extra = n - (sum(ents.values()) - before)
+    if extra > 0:
+        k = _FIELD_ENTITY.get(ftype, "ID")
+        ents[k] = ents.get(k, 0) + extra
+    return nv, n
+
+
+def _rewrite_field(ftype, value, ctx, label, slot, order=None):
     """Return the sanitised value for a structured field. slot: dict tracking PSN placement."""
     eng = ctx.eng
     pol = eng.policy
@@ -231,9 +248,7 @@ def rewrite_field(ftype, value, ctx, label, slot, order=None):
             except Exception:
                 return "[DATE]", 0
     if ftype in ("doctor", "sex", "state", "hospital"):
-        if ftype == "doctor":
-            return value, 0
-        new, n, _ = render_value(v, ctx, ftype)
+        new, n, _ = render_value(v, ctx, ftype)  # doctor too: "Referred by: brother, 98..." carries PII
         return (value if is_num else new), n
     if is_num:
         # bare numbers that are identifiers (Aadhaar as int, phone as int)
@@ -248,9 +263,6 @@ def rewrite_field(ftype, value, ctx, label, slot, order=None):
 
 
 # ===================================================================== CSV / TSV
-class CsvDoc:
-    pass
-
 
 def _realign(row, L, expect):
     if len(row) == L:
@@ -272,9 +284,16 @@ def csv_prepare(doc, eng):
     import os
     ext = os.path.splitext(doc.rel)[1].lower()
     if doc.text.count('"') % 2 == 1:
-        from .ingest import Unsupported
-        raise Unsupported()
-    p = parse_csv(doc.text, ext)
+        # an odd number of quotes is either a literal quote in a value (5" tall, 2" wound) or a broken /
+        # truncated quoted field that would swallow the rest of the file. Accept the literal reading only
+        # if every line then splits into the same number of columns; otherwise quarantine.
+        p = parse_csv(doc.text, ext, literal_quotes=True)
+        L = len(p["header"])
+        if any('"' in h for h in p["header"]) or any(len(r) != L for r in p["rows"] if any(c.strip() for c in r)):
+            from .ingest import Unsupported
+            raise Unsupported()
+    else:
+        p = parse_csv(doc.text, ext)
     header = p["header"]
     L = len(header)
     good = [r for r in p["rows"] if len(r) == L]
@@ -351,7 +370,6 @@ def csv_rewrite(doc, eng):
         for ci, val in enumerate(row):
             ctx.order = doc.orders[ci]
             nv, n = rewrite_field(doc.types[ci], val, ctx, p["header"][ci], slot, doc.orders[ci])
-            eng.count_ids(n)
             new.append(nv if isinstance(nv, str) else str(nv))
         if ctx.psn and not ctx.psn_used:
             for ci, t in enumerate(doc.types):
@@ -364,10 +382,20 @@ def csv_rewrite(doc, eng):
 
 
 def _header_has_pii(h, eng):
-    spans = [s for s in eng.detector.detect(re.sub(r"[_]+", " ", h)) if s.kind in PII_KINDS and s.kind not in ("ADDRESS",)]
-    if spans:
+    spaced = re.sub(r"[_]+", " ", h)
+    lex = eng.detector.lex
+    for s in eng.detector.detect(spaced):
+        if s.kind not in PII_KINDS:
+            continue
+        if s.kind != "ADDRESS":
+            return True
+        # "Address", "Village name" are schema words; "village_Syntalpur" carries a place value
+        if any(classify_label(t) is None and not lex.is_stop(t) and not lex.is_common(t)
+               for t in re.findall(r"[A-Z][a-z]{2,}|[\u0900-\u097F]{2,}", spaced[s.start:s.end])):
+            return True
+    if re.search(r"\d{5,}", h) or any(core.opaque_id(t) for t in re.findall(r"[A-Za-z0-9]{8,}", h)):
         return True
-    return bool(re.search(r"\d{5,}", h))
+    return any(fold(t) in eng.dyn and not lex.is_stop(t) for t in re.findall(r"[A-Za-z]{3,}|[\u0900-\u097F]+", h))
 
 
 # ===================================================================== JSON (non-FHIR)
@@ -516,7 +544,6 @@ def _rewrite_json(node, ctx, eng, slot, parent=None, label="", order=None, depth
                     out[nk] = nv
                     continue
                 nv, n = rewrite_field(t, v, ctx, k, slot, order)
-                eng.count_ids(n)
                 out[nk] = nv
         return out
     if isinstance(node, list):
@@ -527,11 +554,9 @@ def _rewrite_json(node, ctx, eng, slot, parent=None, label="", order=None, depth
             else:
                 nv, n = rewrite_field(parent if parent not in ("name", "first_name", "last_name") else parent, el, ctx, label, slot, order) \
                     if parent in IDENT_TYPES or parent in ("relative", "address", "dob", "village") else rewrite_field(None, el, ctx, label, slot, order)
-                eng.count_ids(n)
                 res.append(nv)
         return res
     nv, n = rewrite_field(parent, node, ctx, label, slot, order)
-    eng.count_ids(n)
     return nv
 
 
@@ -586,7 +611,6 @@ def json_rewrite(doc, eng):
                         out[nk] = nv
                     else:
                         nv, n = rewrite_field(t, v, fctx, k, {}, order)
-                        eng.count_ids(n)
                         out[nk] = nv
             return out
         if isinstance(node, list):
@@ -621,10 +645,18 @@ def json_rewrite(doc, eng):
 
 def _key_needs_clean(k, eng):
     s = str(k)
-    if classify_label(s) is not None and not re.search(r"\d{4,}", s):
-        return False
-    if re.search(r"\d{5,}", s):
+    if re.search(r"\d{5,}", s) or any(core.opaque_id(t) for t in re.findall(r"[A-Za-z0-9]{8,}", s)):
         return True
+    if classify_label(s) is not None and not re.search(r"\d{4,}", s):
+        # a schema word ("patient_...") does not make the rest of the key safe: check the other words
+        words = [w for w in re.split(r"[_\-\s.]+", s) if w]
+        rest = [w for w in words if classify_label(w) is None and not eng.detector.lex.is_stop(w)]
+        if len(words) < 2 or not rest:
+            return False
+        lex = eng.detector.lex
+        if any(fold(w) in eng.dyn or w.lower() in lex.names for w in rest if len(w) >= 3 and not lex.is_medical(w.lower())):
+            return True
+        return bool([sp for sp in eng.detector.detect(" ".join(words)) if sp.kind in PII_KINDS and sp.kind != "ADDRESS"])
     spans = [sp for sp in eng.detector.detect(re.sub(r"[_\-]+", " ", s)) if sp.kind in PII_KINDS]
     if spans:
         return True
@@ -635,6 +667,40 @@ def _key_needs_clean(k, eng):
 FHIR_DATE_RX = re.compile(r"^\d{4}(-\d{2}(-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})?)?)?)?$")
 FHIR_KEEP_KEYS = {"resourceType", "id", "fullUrl", "reference", "system", "code", "unit", "status", "use", "type",
                   "url", "profile", "gender", "contentType", "language", "version", "div_status"}
+
+
+_FHIR_REF_KEYS = ("id", "fullUrl", "reference")
+_RX_UUID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+_RX_REF_SEG = re.compile(r"[^/:#?|]+")
+
+
+def _seg_identifying(seg, eng):
+    """A resource-id / reference path segment that could carry a person: a long digit run, an opaque
+    letters+digits code, or a name token learnt in this run (or a gazetteer name)."""
+    if _RX_UUID.fullmatch(seg):
+        return False  # random by construction; urn:uuid references must stay valid UUIDs
+    if re.search(r"\d{5,}", seg) or core.opaque_id(seg):
+        return True
+    lex = eng.detector.lex
+    for t in re.findall(r"[A-Za-z]{3,}|[\u0900-\u097F]{2,}", seg):
+        if lex.is_medical(t.lower()) or lex.is_stop(t):
+            continue
+        if fold(t) in eng.dyn or t.lower() in lex.names:
+            return True
+    return False
+
+
+def _fhir_ref_clean(s, eng):
+    """Resource ids, fullUrls and references are kept (they wire the bundle together) but a segment
+    that could identify someone ("Patient/meera-joshi-98765...") becomes a keyed token. The same input
+    segment always gives the same token, so id / fullUrl / reference stay consistent."""
+    def seg(m):
+        g = m.group(0)
+        if "." in g or g in ("urn", "uuid", "oid", "http", "https") or not _seg_identifying(g, eng):
+            return g
+        eng.count_ids(1)
+        return "id-" + eng.keys.token("fhir-id", g, 16)
+    return _RX_REF_SEG.sub(seg, s)
 
 
 def _fhir_shift(v, days):
@@ -765,10 +831,10 @@ def fhir_rewrite(doc, eng):
             for k in ("telecom", "photo"):
                 if k in r:
                     del r[k]
-                    eng.count_ids(1)
+                    eng.count_ids(1, "PHONE" if k == "telecom" else "PHOTO")
             if "birthDate" in r:
                 del r["birthDate"]
-                eng.count_ids(1)
+                eng.count_ids(1, "DOB")
             if u.age is not None:
                 r.setdefault("extension", []).append({"url": "urn:raksha:age-band", "valueString": u.band or age_band(u.age, u.level, pol)})
             addrs = []
@@ -785,7 +851,7 @@ def fhir_rewrite(doc, eng):
                 if a.get("country"):
                     na["country"] = a["country"]
                 addrs.append(na)
-                eng.count_ids(1)
+                eng.count_ids(1, "ADDRESS")
             if "address" in r:
                 r["address"] = addrs
             if "contact" in r:
@@ -796,13 +862,13 @@ def fhir_rewrite(doc, eng):
                         if not nc:
                             nc = {"relationship": [{"text": "contact"}]}
                         newc.append(nc)
-                        eng.count_ids(1)
+                        eng.count_ids(1, "RELATIVE_NAME")
                 r["contact"] = newc
         elif rt == "RelatedPerson":
             for k in ("name", "telecom", "address", "identifier", "photo"):
                 if k in r:
                     del r[k]
-                    eng.count_ids(1)
+                    eng.count_ids(1, "RELATIVE_NAME")
     refs = set()
     if b.get("resourceType") == "Bundle":
         for e in b.get("entry", []):
@@ -838,7 +904,6 @@ def _fhir_walk(node, ctx, eng, key, depth=0, parent=None):
                     if et in ("name", "first_name", "last_name"):
                         et = "relative" if re.search(r"(?i)mother|father|spouse|husband|wife|guardian|kin|relative", node["url"]) else et
                     nv, n = rewrite_field(et, v, ctx, k, {"name": True, "mrn": True}, None)
-                    eng.count_ids(n)
                     out[k] = nv
                     continue
             out[k] = _fhir_walk(v, ctx, eng, k, depth + 1, node)
@@ -854,6 +919,8 @@ def _fhir_walk(node, ctx, eng, key, depth=0, parent=None):
     if isinstance(node, list):
         return [_fhir_walk(v, ctx, eng, key, depth + 1, parent) for v in node]
     if isinstance(node, str):
+        if key in _FHIR_REF_KEYS:
+            return _fhir_ref_clean(node, eng)
         if key in FHIR_KEEP_KEYS and key not in ("value",):
             return node
         if FHIR_DATE_RX.match(node) and len(node) >= 7:
@@ -861,9 +928,7 @@ def _fhir_walk(node, ctx, eng, key, depth=0, parent=None):
         if key == "display" and isinstance(parent, dict) and str(parent.get("reference", "")).startswith(("Practitioner", "Organization")):
             return node
         new, n, ents = render_value(node, ctx)
-        eng.count_ids(n)
-        for k2, c in ents.items():
-            eng.entities[k2] = eng.entities.get(k2, 0) + c
+        eng.add_entities(ents, n)
         if key == "display" and isinstance(parent, dict) and str(parent.get("reference", "")) in eng.current_patient_refs:
             # displays of references to the Patient are patient names, even if no gazetteer knows them
             return ctx.psn or "[PATIENT]"
@@ -878,9 +943,9 @@ def _attachment(data, ctype, ctx, eng):
     except Exception:
         eng.count_ids(1)
         return base64.b64encode(b"[binary attachment removed]").decode()
-    new, n, _ = render_value(txt, ctx)
+    new, n, ents = render_value(txt, ctx)
     new, k = _RX_OPAQUE_ID.subn(lambda m: m.group(0) if _clinical_token(m.group(0), eng) else "[ID]", new)
-    eng.count_ids(n + k)
+    eng.add_entities(ents, n + k)
     return base64.b64encode(new.encode("utf-8")).decode()
 
 
@@ -991,9 +1056,8 @@ def text_rewrite(doc, eng):
         if s.kind == "NAME" and (s.start, s.end) in keymap and keymap[(s.start, s.end)] is not None:
             s.meta["is_patient"] = keymap[(s.start, s.end)]
     new, n, ents = render(doc.text, spans, ctx)
-    eng.count_ids(n)
-    for k, c in ents.items():
-        eng.entities[k] = eng.entities.get(k, 0) + c
+    new, nb = core.b64_tokens_sub(new, ctx)
+    eng.add_entities(ents, n + nb)
     if ctx.psn and not ctx.psn_used:
         new = "Patient: %s\n%s" % (ctx.psn, new)
     return new

@@ -300,6 +300,53 @@ _RX_B64 = re.compile(r"[A-Za-z0-9+/]{40,}={0,2}")
 _RX_LOCAL_TOK = re.compile(r"[A-Z][a-z]{2,}|[A-Z]{3,}|[\u0900-\u097F]{2,}")
 
 
+_RX_OPAQUE = re.compile(r"(?=(?:[^0-9]*[0-9]){3})(?=(?:[^A-Za-z]*[A-Za-z]){3})[A-Za-z0-9]{10,}")
+
+
+def opaque_id(tok):
+    """A random-looking code of letters and digits (SYNTH013421f8d057, a1b2c3d4e5): >= 10 chars,
+    >= 3 digits and >= 3 letters, letters and digits interleaved (not a word with a number tail)."""
+    if not _RX_OPAQUE.fullmatch(tok):
+        return False
+    return len(re.findall(r"[A-Za-z]+|[0-9]+", tok)) >= 4
+
+
+_RX_B64_SHORT = re.compile(r"(?<![A-Za-z0-9+/=])[A-Za-z0-9+/]{11,}={0,2}(?![A-Za-z0-9+/=])")
+
+
+def _decode_b64_any(t):
+    if len(t) % 4:
+        return None
+    try:
+        dec = base64.b64decode(t, validate=True).decode("utf-8")
+    except Exception:
+        return None
+    if len(dec) < 4 or not re.search(r"[A-Za-z0-9\u0900-\u097F]", dec):
+        return None
+    if sum(1 for ch in dec if ch.isprintable() or ch in "\n\r\t") < len(dec):
+        return None
+    return dec
+
+
+def b64_tokens_sub(text, ctx, field_hint=None):
+    """Short base64 tokens inside a value or note ("OTg3NjUwMTIzNA==" is a phone number): decode,
+    sanitise the decoded text, re-wrap only if something was removed. Returns (text, n)."""
+    if not re.search(r"[A-Za-z0-9+/]{11,}", text):
+        return text, 0
+    nb = [0]
+
+    def sub(m):
+        dec = _decode_b64_any(m.group(0))
+        if dec is None:
+            return m.group(0)
+        new, n, _ = render_value(dec, ctx, field_hint)
+        if new == dec:
+            return m.group(0)
+        nb[0] += max(n, 1)
+        return base64.b64encode(new.encode("utf-8")).decode("ascii")
+    return _RX_B64_SHORT.sub(sub, text), nb[0]
+
+
 def _decode_b64_text(text):
     t = text.strip()
     if len(t) % 4 or not _RX_B64.fullmatch(t):
@@ -344,6 +391,12 @@ def render_value(value, ctx, field_hint=None):
         if dec is not None:  # base64-wrapped text (scanned forms, attachments): sanitise inside, re-wrap
             new, n, ents = render_value(dec, ctx, field_hint)
             return base64.b64encode(new.encode("utf-8")).decode("ascii"), n, ents
+    whole_b64 = bool(_RX_B64_SHORT.fullmatch(text.strip()))
+    t2, nb = b64_tokens_sub(text, ctx, field_hint)
+    if t2 != text:
+        if whole_b64:
+            return t2, nb, {}
+        text = t2
     spans = ctx.eng.detector.detect(text, field_hint, ctx.order, ctx.year)
     if ctx.unit is not None:
         extra = local_name_spans(text, ctx, spans)
@@ -372,6 +425,11 @@ def sanitize_token_string(s, eng, psn=None):
     # alphanumeric record ids glued with '-' (e.g. IPD-2025-01234, ADM001234, ABC-IPD-01234)
     for m in _RX_GLUED_ID.finditer(s):
         if len(re.sub(r"\D", "", m.group(0))) >= 5:
+            for i in range(m.start(), m.end()):
+                pieces[i] = "\x00"
+            changed = True
+    for m in re.finditer(r"[A-Za-z0-9]{8,}", s):
+        if opaque_id(m.group(0)):
             for i in range(m.start(), m.end()):
                 pieces[i] = "\x00"
             changed = True

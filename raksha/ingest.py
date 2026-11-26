@@ -28,6 +28,10 @@ class FhirInvalid(Exception):
     pass
 
 
+class UnsafeEntry(Exception):
+    """A symlink or non-regular file (FIFO, device, socket) inside the input: never followed or opened."""
+
+
 TEXT_EXT = {".txt", ".text", ".note", ".notes", ".md", ".log", ".rtf_txt", ".hl7", ".xml", ".html", ".htm", ".dat"}
 CSV_EXT = {".csv", ".tsv", ".tab", ".psv"}
 JSON_EXT = {".json", ".fhir", ".ndjson", ".jsonl"}
@@ -36,21 +40,43 @@ BINARY_MAGIC = [b"%PDF", b"PK\x03\x04", b"\x89PNG", b"\xff\xd8\xff", b"GIF8", b"
 
 
 def walk(root):
+    """Every file entry under root, sorted. Symlinked files and non-regular files are listed too, so they
+    are reported as quarantined instead of silently dropped. os.walk never descends into a symlinked
+    folder (like the kit's own validator, which does not count files behind one)."""
     out = []
     for dp, dns, fns in os.walk(root):
         dns.sort()
         for fn in sorted(fns):
-            full = os.path.join(dp, fn)
-            if os.path.islink(full) or not os.path.isfile(full):
-                continue
-            out.append(os.path.relpath(full, root).replace(os.sep, "/"))
+            out.append(os.path.relpath(os.path.join(dp, fn), root).replace(os.sep, "/"))
     return sorted(out)
+
+
+def unsafe_entry_sha(root, rel):
+    """input_sha256 for a quarantined symlink / special file. Its content is never parsed or exported.
+    For a symlink to a regular file (inside or outside the input) only the SHA-256 of the target is
+    computed, because an audit that hashes inputs follows the link and expects that file to be declared;
+    special files (FIFOs, devices) and links to them are never opened (hash of nothing)."""
+    import hashlib
+    import stat
+    full = os.path.join(root, rel)
+    if os.path.islink(full):
+        try:
+            st = os.stat(full)
+            if stat.S_ISREG(st.st_mode) and st.st_size <= 256 << 20:
+                h = hashlib.sha256()
+                with open(os.path.realpath(full), "rb") as fh:
+                    for chunk in iter(lambda: fh.read(1 << 20), b""):
+                        h.update(chunk)
+                return h.hexdigest()
+        except OSError:
+            pass
+    return hashlib.sha256(b"").hexdigest()
 
 
 def read_nofollow(path):
     """Read a file without following a symlink planted at the last path component
     (closes the gap between walk() skipping links and the open)."""
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0)
     fd = os.open(path, flags)
     try:
         import stat
@@ -144,14 +170,6 @@ def parse_json(text):
     return obj
 
 
-def parse_ndjson(text):
-    out = []
-    for line in text.splitlines():
-        if line.strip():
-            out.append(json.loads(line))
-    return out
-
-
 def is_fhir(obj):
     return isinstance(obj, dict) and isinstance(obj.get("resourceType"), str)
 
@@ -185,7 +203,7 @@ def detect_delimiter(text, ext):
         lens = [len(r) for r in rows if r]
         if not lens:
             continue
-        mode = max(set(lens), key=lens.count)
+        mode = max(sorted(set(lens)), key=lens.count)
         if mode < 2:
             continue
         score = lens.count(mode) * mode
@@ -194,9 +212,12 @@ def detect_delimiter(text, ext):
     return best
 
 
-def parse_csv(text, ext):
+def parse_csv(text, ext, literal_quotes=False):
     delim = detect_delimiter(text, ext)
-    rows = list(csv.reader(io.StringIO(text, newline=""), delimiter=delim, strict=False))
+    if literal_quotes:  # quotes are plain characters; one physical line = one row
+        rows = list(csv.reader(io.StringIO(text, newline=""), delimiter=delim, quoting=csv.QUOTE_NONE, strict=False))
+    else:
+        rows = list(csv.reader(io.StringIO(text, newline=""), delimiter=delim, strict=False))
     while rows and not any(c.strip() for c in rows[-1]):
         rows.pop()
     if not rows:

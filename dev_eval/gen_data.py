@@ -7,7 +7,7 @@ MM/DD dates / nested JSON / FHIR / free-text notes in Latin, Devanagari and Hing
 files and canaries. About a third of the names are deliberately NOT in raksha's gazetteer so the
 evaluation measures context-based detection rather than list lookups.
 
-    python scripts/gen_data.py --out /path/synth --patients 60 --seed 7
+    python dev_eval/gen_data.py --out /path/synth --patients 60 --seed 7
 Writes <out>/input/... and <out>/truth.json
 """
 import argparse

@@ -1,6 +1,10 @@
-# Public administrative place names (not person names): all 75 Uttar Pradesh districts (current and
-# former names), Indian states and large cities. Used only as a guard so that "Gonda ko refer kiya" or
-# "Kanpur se aaye" is never read as a person. Source: public state/district lists; not derived from kit data.
+# Public administrative place names (not person names): Indian states and union territories, large
+# cities, all 75 Uttar Pradesh districts (current and former names) and the districts of the other
+# Hindi-belt and neighbouring states (Bihar, MP, Rajasthan, Maharashtra, Gujarat, Haryana, Punjab,
+# Uttarakhand, Jharkhand, Chhattisgarh, West Bengal, Odisha, Himachal) plus major southern/NE cities.
+# District names that are also common person names (Anand, Sagar, Vaishali, Puri, Panna, Rewa, Nadia,
+# ...) and names of 4 letters or fewer are left out on purpose: a place guard must never hide a name.
+# Used only as a guard so that "Gonda ko refer kiya" or "Kanpur se aaye" is never read as a person. Source: public state/district lists; not derived from kit data.
 agra aligarh ambedkarnagar amethi amroha auraiya ayodhya azamgarh baghpat bahraich ballia balrampur banda barabanki bareilly basti bhadohi bijnor budaun badaun bulandshahr
 chandauli chitrakoot deoria etah etawah farrukhabad fatehpur firozabad ghaziabad ghazipur gonda gorakhpur hamirpur hapur hardoi hathras jalaun jaunpur jhansi kannauj kanpur kasganj
 kaushambi kushinagar kheri lakhimpur lalitpur lucknow maharajganj mahoba mainpuri mathura mau meerut mirzapur moradabad muzaffarnagar pilibhit pratapgarh prayagraj raebareli rampur
@@ -8,3 +12,36 @@ saharanpur sambhal shahjahanpur shamli shravasti siddharthnagar sitapur sonbhadr
 delhi mumbai bombay kolkata calcutta chennai madras bengaluru bangalore hyderabad patna bhopal jaipur dehradun chandigarh indore nagpur pune ahmedabad surat ranchi raipur gwalior jabalpur
 bihar uttarakhand rajasthan punjab haryana maharashtra gujarat bengal odisha orissa assam kerala karnataka telangana jharkhand chhattisgarh himachal kashmir nepal india bharat
 लखनऊ उन्नाव दिल्ली मुंबई कोलकाता पटना भारत
+araria arwal aurangabad begusarai bhagalpur bhojpur buxar darbhanga gopalganj jamui jehanabad kaimur katihar
+khagaria kishanganj lakhisarai madhepura madhubani munger muzaffarpur nalanda nawada purnia rohtas saharsa
+samastipur sheikhpura sheohar sitamarhi siwan supaul champaran alirajpur anuppur ashoknagar balaghat barwani
+betul bhind burhanpur chhatarpur chhindwara damoh datia dewas dindori hoshangabad narmadapuram jhabua katni
+khandwa khargone mandla mandsaur morena narsinghpur neemuch raisen rajgarh ratlam satna sehore seoni shahdol
+shajapur sheopur shivpuri sidhi singrauli tikamgarh ujjain umaria vidisha niwari ajmer alwar banswara baran
+barmer bharatpur bhilwara bikaner bundi chittorgarh churu dausa dholpur dungarpur hanumangarh jaisalmer jalore
+jhalawar jhunjhunu jodhpur karauli nagaur rajsamand sikar sirohi sriganganagar ganganagar udaipur ahmednagar
+akola amravati bhandara buldhana chandrapur dhule gadchiroli gondia hingoli jalgaon jalna kolhapur latur
+nanded nandurbar nashik osmanabad dharashiv palghar parbhani raigad ratnagiri sangli satara sindhudurg solapur
+thane wardha washim yavatmal amreli aravalli banaskantha bharuch bhavnagar botad dahod dwarka gandhinagar
+jamnagar junagadh kheda kutch kachchh mahisagar mehsana morbi narmada navsari panchmahal patan porbandar
+rajkot sabarkantha surendranagar vadodara baroda valsad ambala bhiwani dadri faridabad fatehabad gurugram
+gurgaon hisar jhajjar kaithal karnal kurukshetra mahendragarh mewat palwal panchkula panipat rewari rohtak
+sirsa sonipat yamunanagar amritsar barnala bathinda faridkot fazilka ferozepur firozpur gurdaspur hoshiarpur
+jalandhar kapurthala ludhiana malerkotla mohali muktsar pathankot patiala rupnagar ropar sangrur nawanshahr
+almora bageshwar chamoli champawat haridwar nainital pauri pithoragarh rudraprayag tehri uttarkashi bokaro
+chatra deoghar dhanbad dumka garhwa giridih godda gumla hazaribagh jamtara khunti koderma latehar lohardaga
+pakur palamu ramgarh sahebganj sahibganj saraikela simdega singhbhum jamshedpur balod bastar bemetara bijapur
+bilaspur dantewada dhamtari gariaband janjgir jashpur kabirdham kawardha kondagaon korba mahasamund mungeli
+narayanpur raigarh rajnandgaon surajpur surguja ambikapur bhilai alipurduar bankura birbhum darjeeling
+dinajpur hooghly howrah jalpaiguri jhargram kalimpong murshidabad purulia medinipur midnapore asansol durgapur
+siliguri angul balangir balasore baleshwar bargarh bhadrak boudh cuttack deogarh dhenkanal gajapati ganjam
+jagatsinghpur jajpur jharsuguda kalahandi kandhamal kendrapara keonjhar khordha koraput malkangiri mayurbhanj
+nabarangpur nayagarh nuapada rayagada sambalpur sonepur sundargarh bhubaneswar rourkela chamba kangra kinnaur
+kullu lahaul shimla sirmaur solan srinagar jammu anantnag baramulla kupwara pulwama kathua udhampur kargil
+guwahati dibrugarh jorhat silchar tezpur nagaon kamrup visakhapatnam vijayawada guntur nellore tirupati
+kurnool warangal karimnagar nizamabad khammam coimbatore madurai tiruchirappalli trichy tirunelveli vellore
+erode thanjavur mysuru mysore mangaluru mangalore hubli dharwad belagavi belgaum kalaburagi gulbarga davangere
+shivamogga tumakuru thiruvananthapuram trivandrum kochi cochin ernakulam kozhikode calicut thrissur kollam
+kannur palakkad malappuram panaji margao puducherry pondicherry shillong imphal aizawl kohima agartala
+itanagar gangtok manipur meghalaya mizoram nagaland tripura sikkim arunachal ladakh lakshadweep andaman
+nicobar

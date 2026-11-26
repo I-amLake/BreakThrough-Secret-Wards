@@ -62,7 +62,7 @@ python3 --version                        # 3.10+
 pip install -r requirements.txt          # a no-op: the file lists no packages (stdlib only)
 export RAKSHA_SECRET='…'                 # required; never written anywhere
 python3 main.py --input /path/to/input --output /path/to/out
-python3 scripts/validate_output.py --input /path/to/input --output /path/to/out   # -> CONTRACT OK
+python3 dev_eval/validate_output.py --input /path/to/input --output /path/to/out   # -> CONTRACT OK
 ```
 
 Checks and tests (all offline):
@@ -71,6 +71,8 @@ Checks and tests (all offline):
 python3 tests/test_guardrails.py         # forbidden packages, network imports, randomness, HKDF vector
 python3 tests/test_namefind.py           # unseen-name finder (invented names) and over-redaction guards
 python3 tests/acceptance_extended.py     # end-to-end traps, linkage, determinism, secret handling
+python3 tests/test_probes.py             # leak probes from reviews, output-folder safety, symlinks, report counts, hash seed
+python3 tests/test_isolation.py          # pipeline never imports dev_eval/ nor opens answer-key / attacker files
 bash tests/test_offline.sh               # pipeline under a no-network namespace
 python3 scripts/train_namefind.py        # optional: rebuilds raksha/namefind_weights.json byte-identically
 ```
@@ -111,12 +113,13 @@ raksha/
   secure.py             HKDF key derivation, HMAC pseudonyms and date shifts, PII-free logging
   pipeline.py           orchestration, output paths, residual sweep, records.jsonl, report.json
 scripts/
+  train_namefind.py     deterministic synthetic-only trainer for namefind_weights.json
+dev_eval/               DEVELOPMENT EVALUATION ONLY - never imported or run by main.py / raksha/
   gen_data.py           synthetic multi-hospital generator with ground truth
   evaluate.py           local metrics on synthetic data (leaks, preservation, linkage, LOS, determinism, attacker)
-  attack_eval.py        dev-only approximation of the kit's registry attacker (A2/A3 record, A4 pooled) +
-                        an age/district utility proxy, run on an output folder; never imported by the pipeline
+  attack_eval.py        approximation of the kit's registry attacker (A2/A3 record, A4 pooled) + an
+                        age/district utility proxy, run on an output folder
   validate_output.py    minimal mirror of the output contract
-  train_namefind.py     deterministic synthetic-only trainer for namefind_weights.json
 tests/
   acceptance_extended.py  Hindi/Hinglish linkage, same-name non-merge, C/O traps, FHIR, PII filename,
                           quarantine + canary, 9-day stay, determinism, secret sensitivity, unseen given names
@@ -124,6 +127,8 @@ tests/
                           age, one band for a patient seen at 39 and 40
   test_guardrails.py      fails on forbidden packages (openai, anthropic, google.generativeai, transformers,
                           vllm, llama_cpp, ollama, requests, httpx), network modules, model files
+  test_probes.py          review leak probes + release hygiene
+  test_isolation.py       runtime never touches evaluation material
   test_namefind.py        unseen-name finder on invented names; drugs, complaints, places not redacted
   test_offline.sh         runs the pipeline under `unshare -rn` (no network namespace) or a socket guard
 ```
@@ -241,7 +246,7 @@ dropped, so `records_suppressed` is 0). Invalid ages (negative, > 120)
 become `[AGE]`, never a made-up band. Clinical content is never removed. `report.json` carries
 patient-level risk before/after (average, maximum, share below k).
 
-**Trade-off (practice set, `scripts/attack_eval.py`, A2 = mean record risk, A4 = share of patients
+**Trade-off (practice set, `dev_eval/attack_eval.py`, A2 = mean record risk, A4 = share of patients
 re-identified at ≥ 0.5 after pooling by pseudonym; raw QI-only attack: A2 0.20, A4 0.73).**
 
 | policy | A2 | A4 | age utility | district utility | medical kept | records at top level (40-y band + state, still exported) |
@@ -262,13 +267,27 @@ suffix when renamed), or on disk outside the output folder: nothing is written t
 temp files, bytecode writing is disabled. Inputs are opened read-only. Broken, binary, empty, too-deep
 or unparseable files are quarantined and never copied.
 
+Release hygiene: the output folder must be empty (or absent), must not be a symlink and must not
+overlap the input (checked on resolved paths, both directions); otherwise the run refuses with exit 2
+and writes nothing. Everything is built in a private `.release-<pid>` folder inside the output (same
+filesystem, never TMPDIR) and moved into place with `os.replace` only after the whole run succeeded;
+a failed run removes it and leaves the output empty. Input files are read with `O_NOFOLLOW` and are
+re-hashed at the end (a file that changed during the run is reported on stderr as a count). Symlinked
+and special files (FIFOs, devices) in the input are never parsed or exported; they are listed in
+`report.json` as quarantined (`unsafe_filesystem_entry`). For a symlink to a regular file only the
+SHA-256 of its target is computed, because the output contract matches report entries to input hashes.
+`report.json` is internally consistent: `identifiers_detected` equals the sum of `entities`, and
+`records_processed` equals the lines of `records.jsonl`. Output is identical under any
+`PYTHONHASHSEED` (tested without the re-exec in `main.py`, which is kept only as a second guard).
+Evaluation scripts live in `dev_eval/` and are never imported by the pipeline (`tests/test_isolation.py`).
+
 ## Results
 
 Practice set (`RAKSHA_SECRET=practice`, kit `check_dev.py`): CONTRACT OK; 0 of 3,230 identifiers
-visible; 0 of 4 canaries; 4,851 of 4,855 medical values kept (the 4 are district names of suppressed
-patients); linkage precision 1.00, recall 1.00; no patient carries two non-overlapping age bands;
+visible; 0 of 4 canaries; 4,851 of 4,855 medical values kept (the 4 are district names of patients
+generalised to state level); linkage precision 1.00, recall 1.00; no patient carries two non-overlapping age bands;
 0 raw copies; byte-identical across runs; a different secret changes every pseudonym and date shift.
-Synthetic set (`scripts/gen_data.py --patients 60`): 0 leaks of 658 values, 100% clinical preservation,
+Synthetic set (`dev_eval/gen_data.py --patients 60`): 0 leaks of 658 values, 100% clinical preservation,
 linkage P 1.00 / R 0.98, 30 of 30 stays preserved.
 These are our own measurements on the practice set and on our synthetic generator, **not** the hidden
 evaluation score.
@@ -305,7 +324,7 @@ v1.3 (0 leaks either way).
   attacker numbers above are the honest measure. `suppress_below_k: true` enforces it.
 * `report.json` timing and peak RSS differ between runs (required fields). Everything else, and every
   sanitized file and records.jsonl, is byte-identical for the same input and secret.
-* Formats beyond CSV/TSV/JSON/NDJSON/FHIR/text (PDF, images, XML, HL7v2) are quarantined.
+* Formats beyond CSV/TSV/JSON/FHIR/text (NDJSON/JSON Lines, PDF, images, XML, HL7v2) are quarantined.
 
 ## Design notes and credits
 

@@ -3,7 +3,7 @@
 on an OUTPUT folder, for development only. Needs the practice truth and the attacker registry; it
 is never imported by the pipeline (the registry is attacker knowledge, not runtime input).
 
-    python scripts/attack_eval.py --kit /workspace/kit --output OUT
+    python dev_eval/attack_eval.py --kit /workspace/kit --output OUT
 
 Evidence read from each released record (generic, like the attacker): gender, age / age bands,
 district, tehsil, village (Latin or Devanagari), PIN and PIN prefix. Filters are applied in the
