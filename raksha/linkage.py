@@ -138,9 +138,19 @@ class Linker:
         ini2 = [t for t in n2 if len(t) == 1]
         un2 = [u for j, u in enumerate(full2) if j not in used]
         un1 = [t for t in full1 if not any(_tok_sim(t, u) >= 0.88 for u in full2)]
-        ini_ok = all(any(u[0] == i for u in un2) or i in ini2 for i in ini1) and \
-            all(any(t[0] == i for t in un1) or i in ini1 for i in ini2)
+        # an initial is fine when it matches a leftover token / initial, or when the other name simply
+        # stops earlier ("Rajesh K" vs "Rajesh": nothing on the other side to disagree with)
+        ini_ok = all(any(u[0] == i for u in un2) or i in ini2 or (not un2 and not ini2) for i in ini1) and \
+            all(any(t[0] == i for t in un1) or i in ini1 or (not un1 and not ini1) for i in ini2)
         if matched == 0:
+            # "R Kumar" vs "Rajesh K", "Rajesh" vs "R Kumar": full tokens explained by the other side's initials,
+            # with unexplained full tokens left on at most one side
+            ex1 = [t for t in full1 if any(t[0] == i for i in ini2)]
+            ex2 = [u for u in full2 if any(u[0] == i for i in ini1)]
+            left1 = [t for t in full1 if t not in ex1]
+            left2 = [u for u in full2 if u not in ex2]
+            if (ex1 or ex2) and not (left1 and left2) and ini_ok:
+                return 0.5, True, 0
             return -6.0, False, 0
         # given-name disagreement with a surname match (Thivaresh Durovan vs Kelvansh Durovan) is a mismatch
         if matched >= 1 and un1 and un2:

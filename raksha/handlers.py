@@ -489,10 +489,56 @@ def find_records(obj):
     return recs
 
 
+
+_DP_DAY = re.compile(r"(?i)^(?:(?:dob|birth|janm|date)_?)?(?:day|dd|d|din)$")
+_DP_MON = re.compile(r"(?i)^(?:(?:dob|birth|janm|date)_?)?(?:month|mm|mon|mth|mahina)$")
+_DP_YEAR = re.compile(r"(?i)^(?:(?:dob|birth|janm|date)_?)?(?:year|yyyy|yy|yr|saal)$")
+_MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
+
+
+def _date_parts(node, label=""):
+    """A dict that spells one date as sibling fields ({"day": "19", "month": "Mar", "year": "1963"}).
+    Returns (date, is_dob, (kd, km, ky)) or None."""
+    if not isinstance(node, dict) or len(node) > 8:
+        return None
+    kd = next((k for k in node if isinstance(k, str) and _DP_DAY.match(k)), None)
+    km = next((k for k in node if isinstance(k, str) and _DP_MON.match(k)), None)
+    ky = next((k for k in node if isinstance(k, str) and _DP_YEAR.match(k)), None)
+    if not (kd and km and ky):
+        return None
+    try:
+        d = int(str(node[kd]).strip())
+        mv = str(node[km]).strip()
+        m = int(mv) if mv.isdigit() else _MONTHS.index(mv[:3].lower()) + 1
+        ys = str(node[ky]).strip()
+        y = int(ys)
+        if len(ys) == 2:
+            y += 2000 if y <= 40 else 1900
+        date = dt.date(y, m, d)
+    except (ValueError, TypeError, IndexError):
+        return None
+    ctxs = " ".join([str(label)] + [str(k) for k in (kd, km, ky)]).lower()
+    return date, bool(re.search(r"dob|birth|janm|janam|born|जन्म", ctxs)), (kd, km, ky)
+
+
+def _fmt_like(orig, value, kind):
+    o = str(orig).strip()
+    if kind == "m" and not o.isdigit():
+        name = dt.date(2000, value, 1).strftime("%B" if len(o) > 3 else "%b")
+        return name.upper() if o.isupper() else (name.lower() if o.islower() else name)
+    if kind == "y" and len(o) == 2:
+        return "%02d" % (value % 100)
+    return ("%0" + str(len(o)) + "d") % value if o.isdigit() and o.startswith("0") else str(value)
+
+
 def _json_evidence(node, unit, eng, parent=None, label="", order=None, depth=0):
     if depth > 50:
         return
     if isinstance(node, dict):
+        dp = _date_parts(node, label)
+        if dp:
+            field_evidence(unit, "dob" if dp[1] else "date", dp[0].strftime("%d-%m-%Y"), label or "date", eng, order)
+            return
         parent = _dict_ctx(node, parent)
         for k, v in node.items():
             t = _key_type(k, parent)
@@ -528,6 +574,26 @@ def _rewrite_json(node, ctx, eng, slot, parent=None, label="", order=None, depth
     if depth > 200:
         return None
     if isinstance(node, dict):
+        dp = _date_parts(node, label)
+        if dp:
+            date, is_dob, (kd, km, ky) = dp
+            out = {}
+            if is_dob:
+                nv, n = rewrite_field("dob", date.strftime("%d-%m-%Y"), ctx, label or "dob", slot, order)
+                for k, v in node.items():
+                    out[key_fn(k) if key_fn else k] = nv if k in (kd, km, ky) else v
+                return out
+            nv, n = rewrite_field("date", date.strftime("%Y-%m-%d"), ctx, label or "date", slot, order)
+            try:
+                nd = dt.date(*map(int, str(nv).split("-")))
+            except (ValueError, TypeError):
+                nd = None
+            for k, v in node.items():
+                if k in (kd, km, ky):
+                    v = "[DATE]" if nd is None else _fmt_like(v, nd.day if k == kd else nd.month if k == km else nd.year,
+                                                              "d" if k == kd else "m" if k == km else "y")
+                out[key_fn(k) if key_fn else k] = v
+            return out
         out = {}
         parent = _dict_ctx(node, parent)
         for k, v in node.items():
@@ -798,7 +864,39 @@ def fhir_extract(doc, eng):
     for t in texts:
         spans = eng.detector.detect(t)
         spans_evidence(u, t, [s for s in spans if s.kind not in ("DATE",)], patient_mode=True)
+    # a resource id that is an opaque record code ("RK458921") is the patient's record number in this system
+    for r in pats[:1]:
+        rid = str(r.get("id") or "")
+        if rid and not _RX_UUID.fullmatch(rid) and (core.opaque_id(rid) or re.fullmatch(r"[A-Za-z]{1,6}[-/]?\d{4,12}", rid)):
+            u.prof.ids["MRN"].add(norm_id(rid))
+    # decoded plain-text attachments carry the same person (phone, IDs, the patient's name when no Patient resource)
+    for t in _attachment_texts(b):
+        spans = eng.detector.detect(t)
+        spans_evidence(u, t, [s for s in spans if s.kind not in ("DATE",)], patient_mode=True)
+        if not pats and not getattr(u, "_name_parts", None):
+            nm = next((s for s in spans if s.kind == "NAME" and s.role == "patient"), None)
+            if nm:
+                u._name_parts = [nm.text]
     return [end_unit(u, eng)]
+
+
+def _attachment_texts(node, depth=0):
+    out = []
+    if depth > 60:
+        return out
+    if isinstance(node, dict):
+        if isinstance(node.get("data"), str) and str(node.get("contentType", "")).lower().startswith("text/"):
+            try:
+                out.append(base64.b64decode(node["data"], validate=False).decode("utf-8"))
+            except (ValueError, UnicodeDecodeError):
+                pass
+        for v in node.values():
+            if isinstance(v, (dict, list)):
+                out.extend(_attachment_texts(v, depth + 1))
+    elif isinstance(node, list):
+        for v in node:
+            out.extend(_attachment_texts(v, depth + 1))
+    return out
 
 
 def _collect_strings(node, out, key=None, depth=0):

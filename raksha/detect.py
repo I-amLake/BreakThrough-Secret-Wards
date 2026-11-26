@@ -18,7 +18,7 @@ from .translit import devanagari_to_latin, fold, has_devanagari, skeleton
 
 DIGITS = str.maketrans("०१२३४५६७८९", "0123456789")
 
-PRIORITY = {"MED": 100, "DOCTOR": 95, "EMAIL": 90, "ABHA": 89, "AADHAAR": 88, "PAN": 88, "PHONE": 87,
+PRIORITY = {"EVENT": 69, "MED": 100, "DOCTOR": 95, "EMAIL": 90, "ABHA": 89, "AADHAAR": 88, "PAN": 88, "PHONE": 87,
             "MRN": 85, "INSURANCE": 85, "ID": 84, "DATE": 70, "DOB": 71, "AGE": 65, "PIN": 62, "ADDRESS": 60,
             "NAME": 50}
 PII_KINDS = {"EMAIL", "ABHA", "AADHAAR", "PAN", "PHONE", "MRN", "INSURANCE", "ID", "PIN", "ADDRESS", "NAME", "DOB"}
@@ -59,7 +59,14 @@ RX_EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 RX_ABHA_ADDR = re.compile(r"[A-Za-z0-9._]+@(?:abdm|sbx|ndhm)\b", re.I)
 RX_ABHA = re.compile(_NB + r"\d{2}[\s-]\d{4}[\s-]\d{4}[\s-]\d{4}(?![\w])|" + _NB + r"\d{14}(?![\w])")
 RX_AADHAAR = re.compile(_NB + r"[2-9]\d{3}[\s-]?\d{4}[\s-]?\d{4}(?![\w])|(?:[xX*]{4}[\s-]?){2}\d{4}(?![\w])")
-RX_PAN = re.compile(r"(?<![A-Za-z0-9])[A-Za-z]{3}[PCHFATBLJGpchfatbljg][A-Za-z]\d{4}[A-Za-z](?![A-Za-z0-9])")
+RX_PAN = re.compile(r"(?<![A-Za-z0-9])[A-Za-z]{3}[PCHFATBLJGpchfatbljg][A-Za-z] ?\d{4} ?[A-Za-z](?![A-Za-z0-9])")
+# a labelled PAN-shaped value even when the 4th (entity) letter is not an official one ("PAN ABCRK1234P"),
+# and labelled government IDs with no fixed public format (voter ID / EPIC, passport, driving licence, ration card)
+RX_PAN_LABELLED = re.compile(r"(?i)(?<![A-Za-z])(?:pan|p\.a\.n\.?|पैन)(?:\s*(?:no\.?|number|card|कार्ड|नं\.?))?\s*[:#.=\-–]?\s*"
+                             r"([A-Za-z]{5} ?\d{4} ?[A-Za-z])(?![A-Za-z0-9])")
+RX_GOV_LABELLED = re.compile(r"(?i)(?<![A-Za-z])(?:voter\s?id|epic(?:\s?no)?|election\s+card|passport|driving\s+licen[cs]e|"
+                             r"\bdl|ration\s+card|मतदाता\s?पहचान|पासपोर्ट)(?:\s*(?:no\.?|number|#))?\s*[:#.=\-–]?\s*"
+                             r"((?=[A-Za-z0-9/\-]*\d{3})[A-Za-z0-9][A-Za-z0-9/\-]{5,19})(?![A-Za-z0-9])")
 RX_PHONE = re.compile(
     _NB + r"(?:(?:\+|00)\s?91[\s.-]?|91[\s.-]|0)?\(?[6-9]\d{4}\)?[\s.-]?\d{5}(?![\w])|"
     + _NB + r"(?:(?:\+|00)\s?91[\s.-]?|91[\s.-]|0)?[6-9]\d{2}[\s.-]\d{3}[\s.-]\d{4}(?![\w])|"
@@ -77,14 +84,24 @@ RX_UNLABELED_ID = re.compile(r"(?<![\w/-])(?=[A-Z0-9/-]*\d)[A-Z]{1,6}(?:-[A-Z]{2
 RX_LONGNUM = re.compile(r"(?<![\w.,])\d{7,}(?![\w.,])")
 RX_PIN_CTX = re.compile(r"(?i)(?:pin\s?code|pincode|pin|postal\s?code|zip|पिन\s?(?:कोड)?)\s*[:#.\-–]?\s*([1-9]\d{2}\s?\d{3})(?!\d)")
 RX_PIN_TAIL = re.compile(r"(?<![\d])([1-9]\d{2}\s?\d{3})(?!\d)")
-_ADDR_TRIG = (r"(?:address|addr\.?|add\.|r/o|resident\s+of|residing\s+at|res\.|permanent\s+address|present\s+address|"
+_ADDR_TRIG = (r"(?:address|addr\.?|add\.|r/o|resident\s+of|residing\s+at|resides\s+at|stays\s+at|staying\s+at|lives\s+at|living\s+at|"
+              r"makan\s+(?:no\.?|number|nambar|sankhya)|मकान\s+(?:नं\.?|नंबर|संख्या)|res\.|permanent\s+address|present\s+address|"
               r"पता|निवासी|निवास|vill(?:age)?\.?|gram|gaon|gaanv|gaw|mauza|ग्राम|गांव|गाँव|मौजा|mohalla|मोहल्ला|h\.?\s?no\.?|house\s+no\.?|flat\s+no\.?|gali|गली)")
 _VILL = r"(?:vill(?:age)?|gram|gaon|gaanv|gaw|mauza|ग्राम|गांव|गाँव|मौजा)"
 _RX_VILL_WORD = re.compile(r"(?i)" + _VILL)
+_RX_HOUSE_NO_BEFORE = re.compile(r"(?:^|(?<=[\n,(]))\s*(\d{1,4}[A-Za-z]?(?:/[A-Za-z0-9]{1,4})?)[,\s]+$")
+_RX_WEAK_ADDR_TRIG = re.compile(r"(?i)" + _VILL + r"|gali|गली|mohalla|मोहल्ला")
+_RX_ADDR_FUNC_NEXT = re.compile(r"(?i)(?:mein|me|mai|se|ka|ki|ke|ko|wale|waale|wali|par|pe|tak|walon|log|records?|in|of|for|is|was|and|or|the|"
+                                r"में|से|का|की|के|को|वाले|वाली|पर|तक|लोग)(?![\w\u0900-\u097F])")
 _RX_VILL_END = re.compile(r"(?i)\s*(?:[,\n;|(]|-\s|\s(?:tehsil|teh\.?|tahsil|post|p\.\s?o\.?|distt?\.?|district|thana|block|near|pin|तहसील|पोस्ट|जिला|जनपद|ब्लॉक|थाना|के\s+पास))")
 RX_VILLAGE = re.compile(r"(?i)(?<![\w\u0900-\u097F])" + _VILL + r"\.?\s*[:\-]?\s*([A-Za-z\u0900-\u097F][A-Za-z\u0900-\u097F ]{1,40}?)(?=\s*(?:[,\n;|(]|$|\s(?:tehsil|teh\.?|tahsil|post|distt?\.?|district|thana|block|pin|तहसील|पोस्ट|जिला|जनपद|ब्लॉक|थाना)))")
 RX_ADDR = re.compile(r"(?i)(?<![\w\u0900-\u097F])(" + _ADDR_TRIG + r")(?:\s*\([^)\n]{1,25}\))?[ \t]*[:\-–]?[ \t]*")
 RX_ADDR_STOP = re.compile(r"(?i)[\n|;]|\s(?:mob(?:ile)?|ph(?:one)?|contact|tel|age|sex|gender|aadhaa?r|uhid|mrn|dob|diagnosis|dx|c/o|complaint|उम्र|मोबाइल|फोन|आधार)(?![\w\u0900-\u097F])|(?<=[A-Za-z0-9\u0900-\u097F])\.\s+(?=[A-Z][a-z]+\s+[a-z])|(?<=[A-Za-z0-9\u0900-\u097F])\.\s+(?=[A-Z][A-Za-z/ ]{0,20}\s?:)|।")
+_RX_NAME_TAIL_LABEL = re.compile(r"\s+(?:MRN|UHID|UID|ABHA|PAN|DOB|D\.O\.B|IPD|OPD|IP|OP|ID|CR|REG|Regn|Reg\.|Age|Sex|M/F|F/M|PIN|Ph|Mob)\.?\s*[:#\-]?\s*$")
+_DEVA_FUNC = {"और", "को", "का", "की", "के", "ने", "से", "में", "पर", "है", "हैं", "था", "थी", "श्री", "श्रीमती", "मरीज", "मरीज़", "रोगी", "नाम"}
+_ADDR_NOUNS = {"house", "h.no", "flat", "plot", "row", "sector", "sec", "phase", "block", "nagar", "colony", "road", "rd", "lane", "street",
+               "gali", "marg", "chowk", "bagh", "ganj", "pur", "civil", "lines", "apartments", "apartment", "apts", "tower", "towers", "society",
+               "enclave", "vihar", "park", "extension", "ext", "market", "bazar", "bazaar", "mohalla", "village", "near", "opp", "no", "green"}
 _ADDR_ABBR = {"vill", "distt", "dist", "teh", "h.no", "no", "p.o", "po", "ps", "near", "opp", "st", "rd", "gram", "mohalla", "sec", "nr"}
 RX_DISTRICT = re.compile(r"(?i)(?:(?<![a-z])(?:district|distt?\.?|zila|zilla)(?![a-z])|जिला|जनपद)\s*[:\-]?\s*([A-Za-z\u0900-\u0963\u0970-\u097F]+(?:\s(?!pin|state|up\b)[A-Za-z\u0900-\u0963\u0970-\u097F]+)?)")
 STATES = ["andhra pradesh", "arunachal pradesh", "assam", "bihar", "chhattisgarh", "goa", "gujarat", "haryana",
@@ -104,6 +121,15 @@ RX_AGE = [
     re.compile(r"(?<![\d])(\d{1,3})\s?(?:वर्ष|वर्षीय|साल)\s?(?:का|की|के|वर्षीय|पुरुष|महिला)"),
     re.compile(r"(?<![\w/.])(\d{1,3})\s?(?:M|F)\b(?![/\-])"),
 ]
+_AGE_WORD_UNIT = re.compile(r"(?i)[\s-]*(years?|yrs?\.?|yr\.?|saal|sal|baras|baras|varsh|वर्षीया|वर्षीय|वर्ष|साल|बरस)(?![A-Za-z\u0900-\u097F])")
+_AGE_WORD_CUE = re.compile(r"(?i)(?:\bage[d]?|\bumar|\bumr|\bumra|\baayu|उम्र|उमर|आयु|\bturns?|\bturned|\bturning|\bwill\s+turn)\s*(?:of|is|was|hai|:|-|=)?\s*$")
+_AGE_WORD_SUFFIX = re.compile(r"(?i)^[\s,]*(?:old\b|ka\b|ki\b|ke\b|ki\s|की|का|के|वाली|वाला|वाले)(?![\s,]*(?:baad|pehle|pahle|andar|tak|बाद|पहले|अंदर|तक)\b)")
+_AGE_DIGIT_EXTRA = [
+    re.compile(r"(?<=\()\s*(\d{1,3})\s?(?i:yrs?|years?)\.?\s*(?=[,)])"),                       # "(46 yrs)"
+    re.compile(r"(?i)(?<![\w/.])(\d{1,3})\s?(?:saal|sal|varsh|baras)\s(?:ka|ki|ke)\b(?!\s+(?:baad|pehle|pahle|andar|tak)\b)"),
+    re.compile(r"(?i)\b(?:turns?|turned|turning|will\s+turn)\s+(\d{1,3})(?![\d/.:-])"),
+]
+_HINGLISH_SMALL = {"ek", "do", "teen", "char", "chaar", "paanch", "panch", "chhe", "chheh", "saat", "aath", "nau", "das", "sau"}
 RX_AGE_NEG = re.compile(r"(?i)\b(?:age[d]?|umar|umr|उम्र|आयु)(?:\s*/\s*(?:sex|gender|ling|लिंग))?\s*[:=(]\s*(-\s?\d{1,3})(?![\d.])")
 RX_SEX = re.compile(r"(?<![\w\u0900-\u097F])((?i:male|female|man|woman|boy|girl|aurat|aadmi)|पुरुष|महिला|स्त्री|लड़का|लड़की)(?![\w\u0900-\u097F])"
                     r"|(?<![\d.])\d{1,3}\s?(?:(?i:y|yr|yrs|years?|वर्ष|साल)\.?)?\s?/\s?([MFmf])\b|(?<![\d.])\d{1,3}\s?([MF])\b(?![\d.])"
@@ -224,6 +250,10 @@ _PLACE_WORDS = {"hospital", "district", "tehsil", "village", "nagar", "pur", "ga
                 "lucknow", "delhi", "india", "pradesh", "uttar", "bihar", "chc", "phc", "medical", "college", "clinic", "centre", "center"}
 # Hinglish subject/object markers after a capitalised word: "Thivaresh ne bataya", "Thivaresh aur uski wife"
 RX_HINGLISH_ARG = re.compile(r"(?<![\w.'])([A-Z][a-z]{2,})(?=\s+(?:ne|ko|ka|ki|ke|se|aur|bhi|ji|bole|boli|bola)\s+[a-z])")
+RX_ALIAS_PRE = re.compile(r"(?i)(?<![\w])(?:also\s+known\s+as|a\.?k\.?a\.?|alias|urf|उर्फ|nick\s?name(?:\s+is)?|pet\s+name(?:\s+is)?|"
+                          r"ghar\s+(?:ka|ki|ke)\s+naam|घर\s+का\s+नाम|called\s+(?:as\s+)?|known\s+as|goes\s+by)(?![\w\u0900-\u097F])")
+RX_ALIAS_POST = re.compile(r"(?i)\s+(?:(?:naam|name)\s+se\s+)?(?:bulate|bulaate|bulati|bulaati|pukarte|pukaarte|kehte|kahte|bolte)\s+(?:hain|hai|the|thi)"
+                           r"|\s+(?:ke|ki)\s+naam\s+se(?:\s+jaan|\s+bul|\s+mash)|\s+(?:नाम\s+से\s+)?(?:बुलाते|पुकारते|कहते)\s+(?:हैं|है|थे)")
 RX_REL_POST = re.compile(r"(?i)\s+(?:ki|ke|ka|की|के|का)\s+(wife|patni|biwi|pati|husband|beta|beti|bete|son|daughter|father|mother|maa|papa|bahu|पत्नी|पति|बेटा|बेटी|बेटे|पिता|माता|माँ|बहू)(?![\w\u0900-\u097F])")
 RX_DOCTOR = re.compile(r"(?<![\w])(?:Dr|DR|dr|Doctor|Prof)\.?\s*(?=[A-Z\u0900-\u097F])|(?<![\w\u0900-\u097F])(?:डॉक्टर|डॉ|डा)(?![\u0900-\u097F])\.?\s*")
 RX_BY_CUE = re.compile(r"(?i)(?<![\w])(?:called|witnessed|raised|brought|accompanied|informed|signed|reported|requested|visited|escorted|consented|filled|registered|attended|countersigned)\s+by\s*:?\s*(?=[A-Z\u0900-\u097F])")
@@ -599,6 +629,136 @@ class Detector:
             idx -= 1
         return (start, end) if start is not None else None
 
+    def _extend_given_left(self, text, chosen):
+        """"आशा [वर्मा]", "Asha [Verma]": a known given name standing right before a detected name joins it,
+        even when on its own it is an ordinary word (आशा = hope) that the detector would not take."""
+        for sp in chosen:   # "R Kumar MRN": an all-caps record label is never part of a name
+            if sp.kind == "NAME":
+                m = _RX_NAME_TAIL_LABEL.search(sp.text)
+                if m and m.start() > 0:
+                    sp.end = sp.start + m.start()
+                    sp.text = text[sp.start:sp.end]
+        occ = sorted((sp.start, sp.end) for sp in chosen)
+        for sp in chosen:
+            if sp.kind != "NAME" or sp.start < 2:
+                continue
+            m = re.search(r"(?<![\w\u0900-\u097F.])([A-Z][a-z]{2,}|[\u0900-\u097F]{2,}) $", text[max(0, sp.start - 25):sp.start])
+            if not m:
+                continue
+            w = m.group(1)
+            st = sp.start - len(m.group(0))
+            if any(a < sp.start and st < b for a, b in occ if (a, b) != (sp.start, sp.end)):
+                continue
+            f = fold(devanagari_to_latin(w)) if has_devanagari(w) else fold(w)
+            if f not in self.lex.names_f or (self.lex.is_stop(w) and not has_devanagari(w)) or w.lower() in self.lex.honor_pre or (not has_devanagari(w) and self.lex.is_place(w)):
+                continue
+            if has_devanagari(w) and w in _DEVA_FUNC:
+                continue
+            sp.start, sp.text = st, text[st:sp.end]
+        return chosen
+
+    def _pre_pin_places(self, text, spans, pins):
+        """A short run of capitalised place segments right before a PIN with no address cue
+        ("... . Sabzibagh, Patna 800004", "near metro station Sector 15 Noida 201301")."""
+        out = []
+        lex = self.lex
+        for p in pins:
+            if any(sp.kind == "ADDRESS" and sp.start < p.start and p.start - sp.end <= 6 for sp in spans):
+                continue
+            left = text[max(0, p.start - 90):p.start]
+            cut = max(left.rfind("\n"), left.rfind(". "), left.rfind("; "), left.rfind("("), left.rfind(":"), left.rfind("|"))
+            seg0 = left[cut + 1:] if cut >= 0 else left
+            seg = re.sub(r"(?i)[\s,:\-–]*(?:pin\s?code|pincode|pin|पिन)?[\s,:\-–]*$", "", seg0)
+            lead = len(seg) - len(seg.lstrip())
+            seg = seg.strip()
+            if not seg:
+                continue
+            toks = re.findall(r"[^\s,]+", seg)
+            if not 1 <= len(toks) <= 7:
+                continue
+            # a lower-case locative lead-in ("near metro station", "stays at") stays outside the span
+            k = len(toks)
+            while k > 0 and (toks[k - 1][0].isupper() or re.fullmatch(r"[\d/\-]+[A-Za-z]?\.?", toks[k - 1]) or has_devanagari(toks[k - 1])) and \
+                    not (lex.is_stop(toks[k - 1].strip(".")) and toks[k - 1].lower() not in _ADDR_NOUNS):
+                k -= 1
+            body = toks[k:]
+            if not body or len(body) > 6 or all(t[0].isdigit() for t in body):
+                continue
+            if any(lex.is_common(t.strip(".")) and not lex.is_place(t.strip(".")) and t.lower().strip(".") not in _ADDR_NOUNS
+                   for t in body if not t[0].isdigit() and not has_devanagari(t)):
+                continue
+            if not (any(lex.is_place(t.strip(".")) for t in body) or "," in seg):
+                continue
+            st = p.start - len(seg0) + lead + seg.find(body[0])
+            en = st + len(seg) - seg.find(body[0])
+            sub = text[st:en]
+            out.append(Span(st, en, "ADDRESS", sub, meta=self.parse_address(sub, None)))
+        return out
+
+    _RX_WRAP = re.compile(r"(?<=\d)-[ \t]*\r?\n[ \t]*(?=\d)|(?<=@)[ \t]*\r?\n[ \t]*(?=[A-Za-z0-9])|(?<=[A-Za-z0-9._%+-])[ \t]*\r?\n[ \t]*(?=@)")
+
+    def _wrapped_ids(self, norm):
+        """Identifiers broken across a line end ("98390-" / "44128", "name@" / "mail.org"): found on a
+        joined shadow copy and mapped back to the original offsets."""
+        if "\n" not in norm or not self._RX_WRAP.search(norm):
+            return []
+        keep, pos, parts = [], 0, []
+        for m in self._RX_WRAP.finditer(norm):
+            parts.append(norm[pos:m.start()])
+            keep.extend(range(pos, m.start()))
+            if m.group(0).startswith("-"):
+                parts.append("-")
+                keep.append(m.start())
+            pos = m.end()
+        parts.append(norm[pos:])
+        keep.extend(range(pos, len(norm)))
+        sh = "".join(parts)
+        out = []
+
+        def back(a, b):
+            return keep[a], keep[b - 1] + 1
+        for rx, kind, f in ((RX_PHONE, "PHONE", norm_phone), (RX_EMAIL, "EMAIL", str.lower), (RX_AADHAAR, "AADHAAR", digits_only),
+                            (RX_ABHA, "ABHA", digits_only)):
+            for m in rx.finditer(sh):
+                a, b = back(m.start(), m.end())
+                if "\n" in norm[a:b]:
+                    out.append(Span(a, b, kind, f(m.group(0))))
+        return out
+
+    def _spelled_ages(self, norm, field_hint=None):
+        """Ages written in words ("forty one years", "baasath saal ke", "बासठ साल की", "अड़सठ वर्षीया",
+        "turns thirty") and bare "(46 yrs)" / "41 saal ka". A number word is an age only in an age frame:
+        an age cue before it, an adjectival unit (वर्षीय), unit + ka/ki/ke/old, a bracket, or the whole
+        value; "do saal se", "five years back" stay (durations)."""
+        from . import numwords
+        out = []
+        for rx in _AGE_DIGIT_EXTRA:
+            for m in rx.finditer(norm):
+                v = int(m.group(1))
+                if 0 <= v <= 120:
+                    out.append(Span(m.start(1), m.end(1), "AGE", str(v), meta={"age": v}))
+        whole_age = field_hint is not None and re.search(r"(?i)age|umar|उम्र|आयु", str(field_hint))
+        for a, b, v in numwords.find(norm):
+            w = norm[a:b]
+            if w.isascii() and w.lower() not in _HINGLISH_SMALL and " " not in w and "-" not in w and \
+                    re.fullmatch(r"[A-Za-z]+", w) and (self.lex.is_stop(w) or self.lex.is_common(w)) and \
+                    w.lower() not in numwords._EN_UNITS and w.lower() not in numwords._EN_TENS:
+                continue
+            if not 0 < v <= 120:
+                continue
+            before = norm[max(0, a - 30):a]
+            um = _AGE_WORD_UNIT.match(norm, b)
+            ok = bool(_AGE_WORD_CUE.search(before))
+            if not ok and um:
+                rest = norm[um.end():um.end() + 30]
+                unit = um.group(1)
+                ok = (unit in ("वर्षीय", "वर्षीया") or bool(_AGE_WORD_SUFFIX.match(rest))
+                      or (before.rstrip().endswith("(") and rest.lstrip()[:1] in (")", ",", "/"))
+                      or (not norm[:a].strip() and not rest.strip()) or bool(whole_age))
+            if ok:
+                out.append(Span(a, b, "AGE", w, meta={"age": v}))
+        return out
+
     # ---------------------------------------------------------------- main entry
     def detect(self, text, field_hint=None, order=None, year=None):
         """Return resolved list of Spans for text."""
@@ -627,10 +787,15 @@ class Detector:
             spans.append(Span(m.start(), m.end(), "AADHAAR", d, meta={"verhoeff": len(d) == 12 and verhoeff_ok(d)}))
         for m in RX_PAN.finditer(norm):
             w = m.group(0)
-            if w.isupper() or re.search(r"(?i)pan", norm[max(0, m.start() - 15):m.start()]):
-                spans.append(Span(m.start(), m.end(), "PAN", w.upper()))
+            if (w.isupper() and " " not in w) or re.search(r"(?i)pan|पैन", norm[max(0, m.start() - 15):m.start()]):
+                spans.append(Span(m.start(), m.end(), "PAN", re.sub(r"\s", "", w).upper()))
+        for m in RX_PAN_LABELLED.finditer(norm):
+            spans.append(Span(m.start(1), m.end(1), "PAN", re.sub(r"\s", "", m.group(1)).upper(), meta={"labelled": True}))
+        for m in RX_GOV_LABELLED.finditer(norm):
+            spans.append(Span(m.start(1), m.end(1), "ID", m.group(1).upper(), meta={"labelled": True}))
         for m in RX_PHONE.finditer(norm):
             spans.append(Span(m.start(), m.end(), "PHONE", norm_phone(m.group(0))))
+        spans.extend(self._wrapped_ids(norm))
         for m in RX_LABELED_ID.finditer(norm):
             val = m.group(2).rstrip(".-")
             if not re.search(r"\d", val):
@@ -648,8 +813,15 @@ class Detector:
         from .dates import find_dates
         for a, b, d, f in find_dates(norm, order, year):
             ctx = norm[max(0, a - 25):a].lower()
-            kind = "DOB" if re.search(r"dob|d\.o\.b|birth|जन्म", ctx) else "DATE"
+            kind = "DOB" if re.search(r"dob|d\.o\.b|birth|\bborn\b|janm|janam|paida|जन्म|पैदा", ctx) else "DATE"
             spans.append(Span(a, b, kind, norm[a:b], meta={"date": d, "fmt": f}))
+        from . import events
+        for a, b, kind, d in events.find(norm):
+            ctx = norm[max(0, a - 25):a].lower()
+            if kind == "DATE" and re.search(r"dob|d\.o\.b|birth|\bborn\b|janm|janam|paida|जन्म|पैदा", ctx):
+                kind = "DOB"
+            fmt = (lambda nd: "%02d %s %04d" % (nd.day, nd.strftime("%b"), nd.year)) if d else None
+            spans.append(Span(a, b, kind, norm[a:b], meta={"date": d, "fmt": fmt, "event": True}))
         # ages
         for rx in RX_AGE:
             for m in rx.finditer(norm):
@@ -659,6 +831,7 @@ class Detector:
                     spans.append(Span(st, m.end(1), "AGE", str(age), meta={"age": age}))
                 elif rx is RX_AGE[0]:   # "Age: 150": implausible -> masked, never a fake band
                     spans.append(Span(st, m.end(1), "AGE", str(age), meta={"age": None}))
+        spans.extend(self._spelled_ages(norm, field_hint))
         for m in RX_AGE_NEG.finditer(norm):   # "Age: -2": a data error; mask sign and digits together
             spans.append(Span(m.start(1), m.end(1), "AGE", m.group(1), meta={"age": None}))
         # PIN with context
@@ -678,9 +851,30 @@ class Detector:
             seg = text[st:en].rstrip(" ,.-")
             if len(seg.strip()) < 2:
                 continue
+            if _RX_WEAK_ADDR_TRIG.fullmatch(m.group(1).strip().rstrip(".")) and not m.group(0)[len(m.group(1)):].strip(" \t") and \
+                    _RX_ADDR_FUNC_NEXT.match(seg):
+                continue   # "gaon mein log ...", "village records", "गांव में": the word, not an address label
             en = st + len(seg)
+            hn = _RX_HOUSE_NO_BEFORE.search(text[max(0, m.start() - 14):m.start()]) if _RX_WEAK_ADDR_TRIG.fullmatch(m.group(1).strip().rstrip(".")) else None
+            if hn:   # "45 Gali 3 ...": the house number written before the lane / village word
+                st = m.start() - (len(text[max(0, m.start() - 14):m.start()]) - hn.start(1))
+                seg = text[st:en]
             spans.append(Span(st, en, "ADDRESS", seg, meta=self.parse_address(seg, m.group(1))))
         spans.extend(self._structural_addresses(text, spans))
+        # an address that runs into its PIN keeps everything before the PIN (PIN outranks ADDRESS in resolve)
+        pins = [p for p in spans if p.kind == "PIN"]
+        spans.extend(self._pre_pin_places(text, spans, pins))
+        for sp in spans:
+            if sp.kind != "ADDRESS":
+                continue
+            for p in pins:
+                if sp.start < p.start < sp.end:
+                    seg = re.sub(r"(?i)[\s,:\-–]*(?:pin\s?code|pincode|pin|postal\s?code|पिन(?:\s?कोड)?)?[\s,:\-–]*$", "", text[sp.start:p.start])
+                    if len(seg.strip()) >= 2:
+                        sp.end = sp.start + len(seg)
+                        sp.text = seg
+                        sp.meta = self.parse_address(seg, sp.meta.get("trigger") if isinstance(sp.meta, dict) else None)
+                    break
         # C. label:value lines
         spans.extend(self._label_values(text, norm))
         # D. names
@@ -697,7 +891,7 @@ class Detector:
                 spans.extend(prop.propagate(text, existing_spans=mid, span_cls=Span))
             spans.extend(self._coordinated_names(text, self.resolve(spans)))
             spans = [sp for sp in spans if not self._weak_negative_context(text, sp)]
-        return self.resolve(spans)
+        return self._extend_given_left(text, self.resolve(spans))
 
     _RX_COORD = re.compile(r"[ \t]*(?:,[ \t]*)?(?:and|aur|और|&)[ \t]+([A-Z][a-z]{2,}|[\u0900-\u097F]{2,})(?![\w\u0900-\u097F])")
 
@@ -928,6 +1122,18 @@ class Detector:
             r = self._collect_forward(text, toks, m.end() + fw.end(), 2, True)
             if r and all(self.plausible_name_tok(t) or self.tok_ok(t, False) for t in text[r[0]:r[1]].split()):
                 out.append(Span(r[0], r[1], "NAME", text[r[0]:r[1]], role="cued"))
+        # aliases / nicknames: "also known as Raju", "urf Pappu", "pet name Gudiya", "log Raju bulate hain"
+        for m in RX_ALIAS_PRE.finditer(text):
+            fw = re.match(r"\s*(?:is|was|hai|:|-|=)?\s*[\"'‘“]?", text[m.end():])
+            r = self._collect_forward(text, toks, m.end() + fw.end(), 2, True)
+            if r and (text[r[0]].isupper() or has_devanagari(text[r[0]])) and \
+                    all(self.plausible_name_tok(t) or self.tok_ok(t, False) for t in text[r[0]:r[1]].split()):
+                out.append(Span(r[0], r[1], "NAME", text[r[0]:r[1]], role="cued", meta={"alias": True}))
+        for m in RX_ALIAS_POST.finditer(text):
+            b = self._collect_backward(text, toks, m.start(), 1)
+            if b and (text[b[0]].isupper() or has_devanagari(text[b[0]])) and \
+                    all(self.plausible_name_tok(t) or self.tok_ok(t, False) for t in text[b[0]:b[1]].split()):
+                out.append(Span(b[0], b[1], "NAME", text[b[0]:b[1]], role="cued", meta={"alias": True}))
         for m in RX_HINGLISH_ARG.finditer(text):
             w = m.group(1)
             known = self.tok_ok(w, False) and not lex.is_common(w)
@@ -970,6 +1176,12 @@ class Detector:
             r = self._collect_forward(text, toks, m.end(), 3, True)
             before = text[max(0, m.start() - 15):m.start()].lower()
             if r and re.search(r"father|husband|mother|guardian|spouse|wife|pita|pati|पिता|पति|माता|पत्नी|अभिभावक", before):
+                continue
+            if r and re.search(r"relative|attendant|care\s?giver|caretaker|informant|bystander|emergency\s+contact|next\s+of\s+kin|kin|rishtedar|"
+                               r"रिश्तेदार|परिजन|तीमारदार", before):
+                w = text[r[0]:r[1]]
+                if has_devanagari(w) or w[0].isupper():
+                    out.append(Span(r[0], r[1], "NAME", w, role="relative", meta={"rel": "G", "psex": None}))
                 continue
             if r:
                 w = text[r[0]:r[1]]
@@ -1078,6 +1290,9 @@ class Detector:
     # ---------------------------------------------------------------- arbitration
     def resolve(self, spans):
         role_rank = {"patient": 5, "relative": 4, "cued": 3, "ctx": 2, "morph": 2, "prop": 1, "gaz": 1, None: 0}
+        lab = [s for s in spans if s.meta.get("labelled")]
+        if lab:   # an explicitly labelled identifier ("PAN ...", "Passport no. ...") outranks the code-shaped MED guard
+            spans = [s for s in spans if not (s.kind == "MED" and any(s.start < l.end and l.start < s.end for l in lab))]
         spans = sorted(spans, key=lambda s: (-PRIORITY.get(s.kind, 0), -role_rank.get(s.role, 0), -(s.end - s.start), s.start))
         chosen = []
         occupied = []

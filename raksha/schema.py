@@ -13,7 +13,7 @@ QUASI = {"age", "sex", "pin", "city", "district", "state", "date", "diagnosis"}
 
 _RULES = [
     ("text", r"\b(notes?|remarks?|comments?|history|summary|complaints?|chief complaint|observations?|findings|advice|instructions?|narrative|description|text|impression|course|टिप्पणी|शिकायत|विवरण|सारांश|नोट)\b"),
-    ("doctor", r"\b(doctor|dr|consultant|physician|surgeon|treating|attending|referred by|ref by|referring|clinician|prescriber|practitioner|डॉक्टर|चिकित्सक|डॉ)\b"),
+    ("doctor", r"\b(doctor|dr|consultant|physician|surgeon|treating|attending|referred by|ref by|referring|ordered by|requested by|reported by|entered by|signed by|verified by|reviewed by|examined by|seen by|authori[sz]ed by|approved by|pathologist|radiologist|clinician|prescriber|practitioner|डॉक्टर|चिकित्सक|डॉ)\b"),
     ("abha", r"\b(abha|health id|healthid|ndhm|abdm|आभा)\b"),
     ("aadhaar", r"\b(aadhaar|aadhar|adhaar|adhar|uidai|uid|आधार)\b"),
     ("pan", r"\b(pan|pan no|pan card|pan number|payer pan|permanent account)\b"),
@@ -130,6 +130,8 @@ def infer_from_values(values, dyn=None):
     for t, rx in checks:
         if sum(1 for v in vals if rx.match(v)) / n >= 0.7:
             return t
+    if sum(1 for v in vals if re.match(r"(?i)\s*(?:dr\.?|prof\.?|डॉ\.?|डॉक्टर)\s", v)) / n >= 0.6:
+        return "doctor"   # a column of "Dr. ..." values is the treating clinician, not the patient
     if sum(1 for v in vals if looks_like_name(v, dyn)) / n >= 0.6:
         return "name"
     if sum(1 for v in vals if _ID_V.match(v)) / n >= 0.8:

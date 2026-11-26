@@ -89,6 +89,7 @@ python3 tests/test_probes.py             # leak probes from reviews, output-fold
 python3 tests/test_isolation.py          # pipeline never imports dev_eval/ nor opens answer-key / attacker files
 python3 tests/test_stigma.py             # Stigma Shield: trilingual detector, honey values, planner, self-check counts
 python3 tests/test_improve.py            # self-improvement loop building blocks
+python3 tests/test_hardclasses.py        # adversarial leak classes: spelled ages, holidays, wrapped phones, PAN, aliases
 bash dev_eval/demo_stigma.sh             # 30-second before/after demo of the Stigma Shield (invented notes)
 bash tests/test_offline.sh               # pipeline under a no-network namespace
 python3 scripts/train_namefind.py        # optional: rebuilds raksha/namefind_weights.json byte-identically
@@ -381,6 +382,23 @@ patients and caught all 3,050. Peak RSS stayed at 169 MB; run time went from 30 
 practice-set output files are byte-identical to v1.6: its 29 flagged (TB) patients were already at level ≥ 1, and their
 309 planted values were all caught (0 leaks, 4,851/4,855 medical values, linkage 1.00).
 
+Adversarial "hardest" round (v1.8). Two outside model-written test sets (fictional Indian records built to
+break the tool) were scored, used as development data for this round, and then a fresh generator
+(`hardest/variant/gen.py` outside the repo, new invented values and phrasings for the same classes) was
+written and scored once, with no tuning on it:
+
+| set | before (v1.7) leaks / must-keep / groups merged | after (v1.8) |
+|---|---:|---:|
+| outside set A (131 values) | 15 leaked / 62 of 64 / 4 of 5 | 1 leaked / 64 of 64 / 5 of 5 |
+| outside set B (58 values) | 6 leaked / 22 of 22 / 0 of 2 | 0 leaked / 22 of 22 / 2 of 2 |
+| fresh variant, seed 7 (102 values) | 37 leaked / 33 of 37 / 0 of 4 | 1 leaked / 37 of 37 / 4 of 4 |
+| fresh variant, seed 11 (102 values) | 39 leaked / 33 of 37 / 0 of 4 | 1 leaked / 37 of 37 / 4 of 4 |
+
+The remaining leak in set A is the given name inside the idiom "Asha hai ki" (= "the hope is that"),
+kept on purpose. The remaining variant leak is a Hinglish spelling of 64 ("chausath") missing from the
+number-word list. In every set, different people with the same given name stayed apart. The practice-set
+numbers, held-out name and retention numbers, peak RSS (169 MB) and determinism did not change.
+
 ## Keep improving it
 
 The name model can be retrained and checked on a laptop with no network and no packages:
@@ -422,7 +440,9 @@ so the gate keeps the shipped weights.
   proven to be different people (a veto between them, e.g. same name but different father) stays unlinked.
 * Date side channels: dates in file names move with the file's own shift, and weekday names on a line
   with a shifted date become `[DAY]` (they would reveal the true weekday). Festival names ("Holi",
-  "Diwali") are kept as clinical context and can still hint at the season.
+  "Diwali") with a year, or in a time frame ("since Holi", "Diwali ke baad"), become `[DATE]` / `[EVENT]`;
+  fixed-date days with a year ("Republic Day 2025") are shifted like any date. A bare festival name
+  with no time frame is kept as clinical context.
 * k-anonymity is computed within the release. With the default policy, k = 5 is not met for every
   patient (75% of the 48 practice patients sit in classes below 5 on band/sex/district); the registry
   attacker numbers above are the honest measure. `suppress_below_k: true` enforces it.
@@ -432,6 +452,9 @@ so the gate keeps the shipped weights.
   and key and are not self-checked. Facility names are removed from free text and JSON/FHIR strings,
   but not from CSV cells. A patient whose stigmatised condition is described only in words outside the
   vocabulary (for example a euphemism) is not flagged.
+* Ages written in words are found in an age frame (age cue, unit + ka/ki/old, `वर्षीय`, brackets).
+  A number-word spelling missing from the built-in English/Hindi/Hinglish list ("chausath") is missed.
+  So is a spelled age written as a duration ("for sixty years").
 * Formats beyond CSV/TSV/JSON/FHIR/text (NDJSON/JSON Lines, PDF, images, XML, HL7v2) are quarantined.
 
 ## Design notes and credits

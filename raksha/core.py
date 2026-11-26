@@ -12,7 +12,7 @@ from .translit import fold, name_tokens
 
 ID_KINDS = {"AADHAAR", "ABHA", "PAN", "MRN", "INSURANCE", "ID", "EMAIL"}
 PLACEHOLDER = {"PHONE": "[PHONE]", "AADHAAR": "[AADHAAR]", "ABHA": "[ABHA]", "PAN": "[PAN]", "EMAIL": "[EMAIL]",
-               "MRN": "[ID]", "INSURANCE": "[INSURANCE-ID]", "ID": "[ID]"}
+               "MRN": "[ID]", "INSURANCE": "[INSURANCE-ID]", "ID": "[ID]", "EVENT": "[EVENT]"}
 STRUCT_PII = {"name", "first_name", "last_name", "relative", "phone", "email", "aadhaar", "abha", "pan", "mrn",
               "insurance", "address", "village", "tehsil", "dob", "contact"}
 ICD_RX = re.compile(r"\b([A-TV-Z]\d{2}(?:\.\d{1,2})?)\b")
@@ -291,7 +291,7 @@ def render(text, spans, ctx):
         elif k == "DATE":
             d = sp.meta.get("date")
             try:
-                rep = sp.meta["fmt"](d + dt.timedelta(days=ctx.shift))
+                rep = sp.meta["fmt"](d + dt.timedelta(days=ctx.shift)) if d is not None else "[DATE]"
             except Exception:
                 rep = "[DATE]"
         elif k == "DOB":

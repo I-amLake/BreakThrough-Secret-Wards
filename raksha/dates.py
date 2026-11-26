@@ -18,12 +18,16 @@ _HMON_RX = "(?:" + "|".join(sorted(HINDI_MONTHS, key=len, reverse=True)) + ")"
 _TIME = r"(?:[T ]\d{1,2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:\s?[AaPp][Mm])?(?:Z|[+-]\d{2}:?\d{2})?)?"
 
 RX_ISO = re.compile(r"(?<![\d/.-])(\d{4})([-/.])(\d{1,2})\2(\d{1,2})" + _TIME + r"(?![\d])")
-RX_DMY = re.compile(r"(?<![\d/.:-])(\d{1,2})([-/.])(\d{1,2})\2(\d{4}|\d{2})" + _TIME + r"(?![\d/.-]\d)(?!\d)")
+RX_DMY = re.compile(r"(?<![\d/.-])(?<!\d:)(\d{1,2})([-/.])(\d{1,2})\2(\d{4}|\d{2})" + _TIME + r"(?![\d/.-]\d)(?!\d)")
 RX_DMONY = re.compile(r"(?<![\w])(\d{1,2})(st|nd|rd|th)?([\s\-/.,]+)(" + _MON_RX + r")\.?([\s\-/.,]+)(\d{4}|'?\d{2})(?![\w])", re.I)
 RX_MONDY = re.compile(r"(?<![\w])(" + _MON_RX + r")\.?(\s+)(\d{1,2})(st|nd|rd|th)?(,?\s+)(\d{4})(?![\w])", re.I)
 RX_DMON_NOYEAR = re.compile(r"(?<![\w])(\d{1,2})(st|nd|rd|th)?(\s+)(" + _MON_RX + r")(?![\w])(?!\.?[\s\-/.,]+'?\d{2,4})", re.I)
 RX_HINDI = re.compile(r"(?<![\d])(\d{1,2})(\s+)(" + _HMON_RX + r")(\s+)(\d{4})(?![\d])")
 RX_FHIR_FULL = re.compile(r"^(\d{4})(-(\d{2})(-(\d{2})(T[\d:.]+(Z|[+-]\d{2}:\d{2})?)?)?)?$")
+
+
+_RX_DATE_LABEL = re.compile(r"(?i)(?:\b(?:date|dated|dt|doa|dod|dob|dos|d\.o\.[abds]\.?|admi(?:tted|ssion)|discharged?|visit(?:ed)?|"
+                            r"seen|on|born|birth|reported|collected|sampled?)|दिनांक|तारीख|तिथि|जन्म)\W{0,4}$")
 
 
 def _valid(y, m, d):
@@ -67,8 +71,8 @@ def find_dates(text, order=None, year=None):
         if not free(m.start(), m.end()):
             continue
         a, sep, b, ys = m.group(1), m.group(2), m.group(3), m.group(4)
-        if sep == "." and len(ys) == 2:
-            continue  # too ambiguous with decimals / versions
+        if sep == "." and len(ys) == 2 and not _RX_DATE_LABEL.search(text[max(0, m.start() - 24):m.start()]):
+            continue  # too ambiguous with decimals / versions, unless a date label stands right before it
         y = _year(ys)
         ia, ib = int(a), int(b)
         order_used = "dmy"
