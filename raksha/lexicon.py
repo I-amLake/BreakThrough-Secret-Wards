@@ -46,6 +46,11 @@ class Lexicon:
         self.places = set(_words("places.txt"))
         self.places_f = {fold(w) for w in self.places} - {""}
         self.places_sk = {skeleton(w) for w in self.places if len(w) >= 4} - {""}
+        # consonant skeletons of English clinical/common words, to spot them written in Devanagari;
+        # skeletons shared with any gazetteer name are dropped so names are never blocked by this
+        eng = {w for w in (self.common | self.medical | self.stop_latin) if w.isascii() and w.isalpha() and len(w) >= 4}
+        name_sk = {skeleton(w) for w in self.names if w.isascii()}
+        self.loan_sk = {skeleton(w) for w in eng if len(skeleton(w)) >= 4} - name_sk - {""}
         # names that also collide with medical/common vocabulary: need context
         self.ambiguous = (self.names & (self.medical | self.stop_latin))
 
@@ -67,7 +72,7 @@ class Lexicon:
                 return True
             lat = devanagari_to_latin(t)
             sk = skeleton(lat)
-            return fold(lat) in self.places_f or (len(sk) >= 3 and sk in self.places_sk)
+            return fold(lat) in self.places_f or (len(sk) >= 5 and sk in self.places_sk)
         tl = t.lower()
         return tl in self.places or fold(tl) in self.places_f
 

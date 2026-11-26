@@ -3,7 +3,7 @@
 
 Generates purely synthetic compositional Indian names vs. synthetic/standard clinical, pharma,
 place, Hinglish, and English negative tokens (zero memorized benchmark data).
-Outputs: raksha/namefind_weights.json (typically ~20-40 KB).
+Outputs: /tmp/wB.json (typically ~20-40 KB).
 """
 from __future__ import annotations
 
@@ -191,6 +191,19 @@ def build_synthetic_dataset(seed: int = 42) -> list[tuple[str, int]]:
         if 4 <= len(w) <= 14:
             pos.add(w)
 
+    # Generic Indic phonotactics: 2-3 CV syllables + a gendered/agentive ending (no real names)
+    cons = ["k", "kh", "g", "gh", "ch", "j", "jh", "t", "th", "d", "dh", "n", "p", "ph", "b", "bh", "m", "y", "r", "l", "v", "sh", "s", "h"]
+    vows = ["a", "a", "a", "i", "u", "e", "o", "aa", "ee", "ai", "au"]
+    codas = ["", "", "", "n", "m", "r", "sh", "t", "l", "v"]
+    ends = sorted(set(_INDIC_ENDINGS + ["a", "i", "esh", "ita", "ika", "ini", "endra", "ant", "ram", "nath", "pal", "deep", "jeet",
+                                         "vati", "mati", "lata", "bala", "rika", "vika", "lekha", "sukh", "dev", "raj", "veer"]))
+    for _ in range(4000):
+        n = rng.choice((1, 2, 2, 3))
+        w = "".join(rng.choice(cons) + rng.choice(vows) + rng.choice(codas) for _ in range(n)) + rng.choice(ends)
+        w = norm_latin(w)
+        if 4 <= len(w) <= 13:
+            pos.add(w)
+
     # Negative class: stoplist + synthetic pharma + synthetic clinical + synthetic places + English
     for w in STOP_LATIN:
         nl = norm_latin(w)
@@ -222,6 +235,13 @@ def build_synthetic_dataset(seed: int = 42) -> list[tuple[str, int]]:
     for w in sorted(lex.common | lex.stop_latin | lex.medical | lex.places):
         nl = norm_latin(w)
         if len(nl) >= 3 and re.fullmatch(r"[a-z]+", w or "") and nl not in SURNAMES_LATIN:
+            neg.add(nl)
+
+    # Hindi vocabulary shipped in stop_hindi.txt, transliterated (symptoms, body, food, time words)
+    from raksha.translit import devanagari_to_latin
+    for w in sorted(lex.stop_hindi):
+        nl = norm_latin(devanagari_to_latin(w))
+        if len(nl) >= 3 and nl not in SURNAMES_LATIN:
             neg.add(nl)
 
     # Ensure disjoint sets

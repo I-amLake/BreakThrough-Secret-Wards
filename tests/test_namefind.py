@@ -40,6 +40,26 @@ class UnseenNames(unittest.TestCase):
         self.assertEqual(sum("Thivaresh" in n for n in names(t)), 2)
 
 
+class CuelessAndAddresses(unittest.TestCase):
+    def test_cueless_frames(self):
+        self.assertTrue(masked("Spoke to Thivaresh on the phone.", "Thivaresh"))
+        self.assertTrue(masked("Aaj Thivaresh OPD mein aaye the.", "Thivaresh"))
+        self.assertTrue(masked("आज थिवरेश भर्ती हुई।", "थिवरेश"))
+        self.assertTrue(masked("गोनावती देवी को दर्द है।", "गोनावती"))
+
+    def test_symptom_and_role_subjects_kept(self):
+        for t in ["Raat ko bukhar aaya.", "कल झटके आए।", "Relatives ghar chale gaye.", "Spoke to Blood Bank for units.",
+                  "Safar ke baad dard badha."]:
+            self.assertEqual(names(t), [], t)
+
+    def test_triggerless_address(self):
+        kinds = [(s.kind, s.text) for s in Detector().detect("Ghar 23 Kalvo Tola mein hai, Dorni Mandir ke paas.")]
+        self.assertIn(("ADDRESS", "23 Kalvo Tola"), kinds)
+        self.assertIn(("ADDRESS", "Dorni Mandir"), kinds)
+        for t in ["Road traffic accident 2 days back.", "Pain near umbilicus.", "Platelets 150000.", "भीलवाड़ा वाले अस्पताल भेजा।"]:
+            self.assertFalse([s for s in Detector().detect(t) if s.kind in ("ADDRESS", "PIN")], t)
+
+
 class NoOverRedaction(unittest.TestCase):
     def test_drugs_and_doses(self):
         for t in ["Tab Dolokind 650 1-0-1 x 5 days.", "Started Pantocid today.", "Syp Zerodol was given."]:

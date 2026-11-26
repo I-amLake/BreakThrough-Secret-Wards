@@ -14,7 +14,7 @@ import re
 
 from .lexicon import get_lexicon
 from .schema import classify_label
-from .translit import devanagari_to_latin, fold, has_devanagari
+from .translit import devanagari_to_latin, fold, has_devanagari, skeleton
 
 DIGITS = str.maketrans("०१२३४५६७८९", "0123456789")
 
@@ -81,7 +81,7 @@ _VILL = r"(?:vill(?:age)?|gram|gaon|gaanv|gaw|mauza|ग्राम|गांव
 _RX_VILL_WORD = re.compile(r"(?i)" + _VILL)
 _RX_VILL_END = re.compile(r"(?i)\s*(?:[,\n;|(]|-\s|\s(?:tehsil|teh\.?|tahsil|post|p\.\s?o\.?|distt?\.?|district|thana|block|near|pin|तहसील|पोस्ट|जिला|जनपद|ब्लॉक|थाना|के\s+पास))")
 RX_VILLAGE = re.compile(r"(?i)(?<![\w\u0900-\u097F])" + _VILL + r"\.?\s*[:\-]?\s*([A-Za-z\u0900-\u097F][A-Za-z\u0900-\u097F ]{1,40}?)(?=\s*(?:[,\n;|(]|$|\s(?:tehsil|teh\.?|tahsil|post|distt?\.?|district|thana|block|pin|तहसील|पोस्ट|जिला|जनपद|ब्लॉक|थाना)))")
-RX_ADDR = re.compile(r"(?i)(?<![\w])(" + _ADDR_TRIG + r")(?:\s*\([^)\n]{1,25}\))?[ \t]*[:\-–]?[ \t]*")
+RX_ADDR = re.compile(r"(?i)(?<![\w\u0900-\u097F])(" + _ADDR_TRIG + r")(?:\s*\([^)\n]{1,25}\))?[ \t]*[:\-–]?[ \t]*")
 RX_ADDR_STOP = re.compile(r"(?i)[\n|;]|\s(?:mob(?:ile)?|ph(?:one)?|contact|tel|age|sex|gender|aadhaa?r|uhid|mrn|dob|diagnosis|dx|c/o|complaint|उम्र|मोबाइल|फोन|आधार)(?![\w\u0900-\u097F])|(?<=[A-Za-z0-9\u0900-\u097F])\.\s+(?=[A-Z][a-z]+\s+[a-z])|।")
 _ADDR_ABBR = {"vill", "distt", "dist", "teh", "h.no", "no", "p.o", "po", "ps", "near", "opp", "st", "rd", "gram", "mohalla", "sec", "nr"}
 RX_DISTRICT = re.compile(r"(?i)(?:distt?\.?|district|zila|zilla|जिला|जनपद)\s*[:\-]?\s*([A-Za-z\u0900-\u0963\u0970-\u097F]+(?:\s(?!pin|state|up\b)[A-Za-z\u0900-\u0963\u0970-\u097F]+)?)")
@@ -152,10 +152,55 @@ from .namefind import CharNgramScorer, NameFinder, NamePropagator, norm_latin  #
 _RX_PLACE_CTX = re.compile(r"\s+(?:se\s+(?:aa|aay|aaye|aayi|aaya|aai|aaye\s+the|laaye|laya|refer)|ko\s+refer|(?:mein|me|main)\s+(?:rehte|rehti|rahte|rahti|bhej)|tak\s+(?:gaye|gayi)"
                            r"|से\s+(?:आ|लाए|लाया|रेफर)|को\s+रेफर|में\s+(?:रहत|भेज))", re.I)
 # Structural cues that a weakly-detected word is a complaint/drug, not a person.
-_RX_THING_RIGHT = re.compile(r"\s+(?:ki|ka|की|का)\s+(?:shikayat|shikaayat|takleef|taklif|dose|शिकायत|तकलीफ़?|डोज़?)", re.I)
+_RX_THING_RIGHT = re.compile(r"\s+(?:(?:ki|ka|की|का)\s+(?:shikayat|shikaayat|takleef|taklif|dose|शिकायत|तकलीफ़?|डोज़?)"
+                             r"|(?:ke|के)\s+(?:baad|bad|pehle|pahle|dauran|samay|बाद|पहले|दौरान|समय)(?![\w\u0900-\u097F])"
+                             r"|(?:ne|ने)\s+(?:kaam|asar|fayda|faayda|असर|काम|फ़?ायदा)\s+(?:kiya|kar|diya|किया|कर|दिया))", re.I)
 _RX_DRUG_LEFT = re.compile(r"(?:\b(?:tab|tabs|tablet|cap|caps|capsule|syp|syrup|inj|injection|oint|ointment|drops?|started|start|continue|stop|stopped)\.?|टैबलेट|गोली|सिरप|इंजेक्शन)\s+$", re.I)
 _RX_KO_LEFT = re.compile(r"(?:\bko|को)\s+$", re.I)
 _RX_COPULA_RIGHT = re.compile(r"\s+(?:hai|tha|thi|ho\s+gay[ai]|है|था|थी|हो\s+गय[ाी])(?![\w\u0900-\u097F])", re.I)
+# ---- cue-less person frames (no postposition, honorific or label next to the name)
+_CL_TEMPORAL = {"aaj", "kal", "abhi", "subah", "shaam", "sham", "raat", "dopahar", "phir", "ab", "parson", "ko", "aaj", "today",
+                "आज", "कल", "अभी", "सुबह", "शाम", "रात", "दोपहर", "फिर", "अब", "परसों", "को"}
+# Only verbs whose subject is a person: honorific/plural "came/went" forms (a symptom "aaya/aayi/आई" is
+# excluded on purpose: "bukhar aaya", "हिचकी आई") and speech/admission verbs.
+_CL_PERSON_VERB = {"aaye", "aayin", "aaeen", "gaye", "chale", "bharti", "bhartee", "bataya", "batayi", "batai", "kaha", "boli",
+                   "bole", "bola", "ro", "rone", "chilla",
+                   "आए", "आये", "आईं", "गए", "गये", "गईं", "चले", "भर्ती", "बताया", "बताई", "कहा", "बोली", "बोले", "बोला", "रो"}
+_CL_HONOR_STATE = re.compile(r"(?:\s+(?:ab|अब|abhi|अभी))?\s+(?:theek|thik|stable|behtar|better|ठीक|स्थिर|बेहतर)\s+(?:hain|हैं)(?![\w\u0900-\u097F])", re.I)
+_CL_EN_LEFT = re.compile(r"(?i)\b(?:(?:spoke|talked|discussed|explained|counsell?ed)(?:\s+[a-z]+){0,4}?\s+(?:to|with)|called(?:\s+back)?|informed|told|"
+                         r"counsell?ed|reassured|phoned|met|consoled)\s+(?=[A-Z])")
+_CL_EN_SUBJ = re.compile(r"\s+(?:was|is|has\s+been|got|had\s+been)\s+(?:admitted|discharged|brought|counsell?ed|examined|operated|shifted|seen)\b", re.I)
+_CL_MIN_P = 0.3   # name-scorer floor inside a person frame (the lexicon guards do most of the work)
+_CL_COND = {"haalat", "halat", "haalaat", "tabiyat", "tabiyet", "tabeeyat", "tabiyat", "sehat", "condition", "हालत", "तबीयत", "तबियत", "सेहत"}
+_CL_EXPERIENCER = re.compile(r"(?:\s+[A-Za-z\u0900-\u097F]+){1,3}?\s+(?:ho\s+rah[aie]|hai|hain|aaya|aayi|aaye|lag\s+rah[aie]|lagi|hua|hui|"
+                             r"है|हैं|हो\s+रह[ाीे]|आया|आई|आए|लग\s+रह[ाीे]|हुआ|हुई)(?![\w\u0900-\u097F])", re.I)
+# generic person-role / group nouns: subjects of person verbs that are not names
+_ROLE_NOUNS = {"relative", "relatives", "rishtedar", "rishtedaar", "gharwale", "gharwaale", "parivar", "family", "saathi", "sathi", "dost",
+               "friend", "friends", "padosi", "neighbour", "neighbor", "attendant", "attendants", "attender", "nurse", "sister", "doctor",
+               "doctors", "staff", "ward", "boy", "aaya", "ayah", "bhai", "behen", "beta", "beti", "bachche", "bachcha", "baccha", "log",
+               "sab", "mareez", "marij", "patient", "patients", "mother", "father", "husband", "wife", "son", "daughter", "pati", "patni",
+               "रिश्तेदार", "घरवाले", "परिवार", "साथी", "दोस्त", "पड़ोसी", "पडोसी", "नर्स", "सिस्टर", "डॉक्टर", "डाक्टर", "स्टाफ",
+               "भाई", "बहन", "बेटा", "बेटी", "बच्चे", "बच्चा", "लोग", "सब", "मरीज़", "मरीज", "पति", "पत्नी", "माँ", "मां", "पिता"}
+# a following department/organisation head makes the capitalised object a unit, not a person ("Blood Bank")
+_RX_ORG_NEXT = re.compile(r"\s+(?:Bank|Team|Department|Dept\.?|Unit|Ward|OPD|Clinic|Lab|Laboratory|Desk|Counter|Office|Services|Staff|Room|Theatre|Section|Store)\b")
+_CL_TOK = re.compile(r"[A-Za-z]+|[\u0900-\u0963\u0970-\u097F]+")
+_CL_CLAUSE = re.compile(r"[^.!?।\n;:,()\[\]]+")
+# ---- addresses without a trigger word: structure, not labels
+_LOC_HEAD_L = (r"(?:Nagar|Colony|Tola|Marg|Vihar|Puram|Basti|Purwa|Chowk|Bazaa?r|Road|Rd\.?|Street|Lane|Gali|Mohalla|Enclave|Market|"
+               r"Mandi|Nagla|Khurd|Kalan|Ganj|Para|Patti|Kheda|Khera|Extension|Layout|Society|Apartments?|Complex|Sector\s?\d{1,3}|Phase\s?\d{1,2})")
+_LOC_HEAD_D = r"(?:नगर|कॉलोनी|कालोनी|टोला|मार्ग|रोड|विहार|बस्ती|पुरवा|चौक|बाज़ार|बाजार|गंज|मंडी|नगला|खुर्द|कलां|कला|मोहल्ला|गली|पुरम|सेक्टर\s?\d{1,3})"
+_LMK_HEAD_L = (r"(?:Mandir|Masjid|School|Vidyalaya|Chauraha|Tiraha|(?:Pani\s)?Tanki|Post\s?Office|Petrol\s?Pump|Gurudwara|Church|Thana|"
+               r"Chowki|Railway\s(?:Crossing|Station|Phatak)|Bus\s?(?:Stand|Adda)|Talab|Pul|Park|Mazar|Dharamshala|Tower|Water\sTank)")
+_LMK_HEAD_D = r"(?:मंदिर|मस्जिद|स्कूल|विद्यालय|चौराहा|तिराहा|(?:पानी\s)?टंकी|डाकघर|पेट्रोल\sपंप|गुरुद्वारा|थाना|चौकी|स्टेशन|बस\sअड्डा|तालाब|पुल|पार्क|मज़ार|मजार)"
+_ROOT_L = r"(?:[A-Z][a-z]+(?:\s(?!(?:Pani|Post|Petrol|Railway|Bus|Water)\b)[A-Z][a-z]+)?)"
+_ROOT_D = r"(?:[\u0900-\u0963\u0970-\u097F]+(?:\s(?!(?:पानी|पेट्रोल|बस)\s)[\u0900-\u0963\u0970-\u097F]+)?)"
+_HOUSE = r"(?:\d{1,4}(?:\s?[/-]\s?\d{1,4})?[A-Za-z]?)"
+RX_LOC_L = re.compile(r"(?<![\w/])(?:(" + _HOUSE + r")\s*[,\-]?\s*)?(" + _ROOT_L + r")\s+" + _LOC_HEAD_L + r"(?![A-Za-z])")
+RX_LOC_D = re.compile(r"(?<![\w\u0900-\u097F/])(?:(" + _HOUSE + r")\s*[,\-/]?\s*)?(" + _ROOT_D + r")\s+" + _LOC_HEAD_D + r"(?![\u0900-\u097F])")
+RX_LMK_L = re.compile(r"(?i:\b(?:near|nr\.?|opp\.?|opposite|behind|beside|next\s+to|in\s+front\s+of)\s+)(?:the\s+)?(" + _ROOT_L + r"\s+)?" + _LMK_HEAD_L + r"\b"
+                      r"|(" + _ROOT_L + r"\s+)?" + _LMK_HEAD_L + r"(?=\s+ke\s+(?:paas|pass|saamne|samne|peeche|piche)\b)")
+RX_LMK_D = re.compile(r"(" + _ROOT_D + r"\s+)?" + _LMK_HEAD_D + r"(?=\s+के\s+(?:पास|सामने|पीछे|बगल))")
+RX_PIN_AFTER_PLACE = re.compile(r"([A-Za-z\u0900-\u097F]+)[,\s]\s?([1-9]\d{2}\s?\d{3})(?![\d])")
 _WEAK_CUE_MIN_P = 0.3  # min name-classifier probability for an unknown word after a weak Hinglish cue
 _SCORER = []
 
@@ -255,8 +300,130 @@ class Detector:
             return True
         return bool(_RX_KO_LEFT.search(left) and _RX_COPULA_RIGHT.match(text, sp.end))
 
+    def _root_ok(self, root):
+        """Every word of a locality/landmark root must be an unknown or name-like word, never a clinical,
+        stop or common word ("Pain near ...", "Road traffic ...", "Medicine Market" stay)."""
+        lex = self.lex
+        for w in root.split():
+            if has_devanagari(w):
+                if w in lex.stop_hindi:
+                    return False
+                lat = devanagari_to_latin(w)
+                if lat in lex.medical or lat in lex.common or lat in lex.stop_latin:
+                    return False
+            elif lex.is_medical(w) or lex.is_stop(w) or (lex.is_common(w) and w.lower() not in lex.names):
+                return False
+        return True
+
+    def _structural_addresses(self, text, spans):
+        """House number + locality ("45 Kalvo Nagar", "45 कलवो टोला"), a locality phrase on its own, and
+        landmarks ("near X Mandir", "X मंदिर के पास"), found without any Address/Vill./पता trigger."""
+        taken = [(sp.start, sp.end) for sp in spans if sp.kind in ("ADDRESS", "MED", "DOCTOR")]
+        out = []
+
+        def add(st, en, has_house):
+            if en - st < 4 or any(st < b and a < en for a, b in taken):
+                return
+            seg = text[st:en]
+            out.append(Span(st, en, "ADDRESS", seg, meta=dict(self.parse_address(seg), structural=True, house=has_house)))
+            taken.append((st, en))
+
+        for rx in (RX_LOC_L, RX_LOC_D):
+            for m in rx.finditer(text):
+                if self._root_ok(m.group(2)) and not self.lex.is_place(m.group(2).split()[0]):
+                    add(m.start(1) if m.group(1) else m.start(2), m.end(), bool(m.group(1)))
+        for m in RX_LMK_L.finditer(text):
+            root = m.group(1) or m.group(2)
+            if root and not self._root_ok(root):
+                continue
+            g = 1 if m.group(1) else (2 if m.group(2) else 0)
+            add(m.start(g) if g else m.start(), m.end(), False)
+        for m in RX_LMK_D.finditer(text):
+            if m.group(1) and not self._root_ok(m.group(1)):
+                continue
+            add(m.start(), m.end(), False)
+        # a PIN right after a place word or after a structural address on the same line
+        for m in RX_PIN_AFTER_PLACE.finditer(text.translate(DIGITS)):
+            line_start = text.rfind("\n", 0, m.start()) + 1
+            near_addr = any(line_start <= a and b <= m.start(2) and m.start(2) - b < 60 for a, b in taken)
+            if self.lex.is_place(m.group(1)) or near_addr:
+                out.append(Span(m.start(2), m.end(2), "PIN", digits_only(m.group(2))))
+        return out
+
+    def _cueless_names(self, text):
+        """Names with no adjacent cue, found from the clause frame: the first word of a clause whose
+        predicate is a person verb (aaye/गए/भर्ती/बताया ...), or an honorific state (`ab theek hain`),
+        an English object of a speech verb (`spoke to X`, `informed X`) or subject of `was admitted`.
+        Only unknown, name-shaped words (not stop/common/medical/place/surname) qualify."""
+        out = []
+        lex = self.lex
+
+        def latin_ok(w, p):
+            return self.plausible_name_tok(w) and not lex.is_surname_only(w) and w.lower() not in _ROLE_NOUNS and self.name_score(w) >= p
+
+        def lower_ok(w, p):
+            return (len(w) >= 4 and w.islower() and not lex.is_common(w) and not lex.is_medical(w) and not lex.is_stop(w)
+                    and not lex.is_place(w) and fold(w) not in lex.names_f and self.name_score(w) >= p)
+
+        for m in _CL_EN_LEFT.finditer(text):
+            t = _CL_TOK.match(text, m.end())
+            if t and latin_ok(t.group(0), _CL_MIN_P) and not _RX_ORG_NEXT.match(text, t.end()):
+                out.append(Span(t.start(), t.end(), "NAME", t.group(0), role="ctx", meta={"weak": True}))
+        for cm in _CL_CLAUSE.finditer(text):
+            toks = [(cm.start() + t.start(), cm.start() + t.end(), t.group(0)) for t in _CL_TOK.finditer(cm.group(0))]
+            k = 0
+            while k < len(toks) and toks[k][2].lower() in _CL_TEMPORAL:
+                k += 1
+            if k >= len(toks) - 1:
+                continue
+            st, en, w = toks[k]
+            if w.lower() in _ROLE_NOUNS or w in _ROLE_NOUNS:
+                continue
+            rest = [t[2].lower() for t in toks[k + 1:k + 9]]
+            verb = any(r in _CL_PERSON_VERB for r in rest)
+            state = bool(_CL_HONOR_STATE.match(text, en))
+            subj = bool(_CL_EN_SUBJ.match(text, en))
+            nxt = toks[k + 1][2].lower()
+            post = None
+            if nxt in ("ne", "ने"):
+                post = "erg"
+            elif nxt in ("ko", "को") and k + 2 < len(toks) and (lex.is_medical(toks[k + 2][2]) or toks[k + 2][2] in lex.stop_hindi
+                                                                 or lex.is_common(toks[k + 2][2])) and _CL_EXPERIENCER.match(text, toks[k + 1][1]):
+                post = "dat"
+            elif nxt in ("ki", "की", "ka", "का") and k + 2 < len(toks) and toks[k + 2][2].lower() in _CL_COND:
+                post = "gen"
+            if post:
+                if has_devanagari(w):
+                    ok = self.plausible_name_tok_deva(w, _CL_MIN_P)
+                elif w[:1].isupper():
+                    ok = latin_ok(w, _CL_MIN_P)
+                else:
+                    ok = lower_ok(w, 0.3)
+                if ok:
+                    out.append(Span(st, en, "NAME", w, role="ctx", meta={"weak": True}))
+                continue
+            if nxt in ("ko", "को", "se", "से", "ka", "ki", "ke", "का", "की", "के", "mein", "में"):
+                continue   # other postposition frames belong to the other rules
+            if not (verb or state or subj):
+                continue
+            if verb and not state and (w.endswith("े") or re.search(r"[^e]e$", w)):
+                continue   # masculine plural nouns ("झटके आए", "jhatke aaye") take the plural verb too
+            if has_devanagari(w):
+                ok = self.plausible_name_tok_deva(w, _CL_MIN_P if verb or state else 1.1)
+            elif w[:1].isupper():
+                ok = latin_ok(w, _CL_MIN_P)
+            else:
+                ok = (verb or state) and lower_ok(w, 0.6)
+            if ok:
+                out.append(Span(st, en, "NAME", w, role="ctx", meta={"weak": True}))
+        return out
+
     def name_score(self, tok):
         """Probability that an unknown word is a person name (synthetic-trained char n-gram scorer)."""
+        if has_devanagari(tok):
+            tok = devanagari_to_latin(tok)
+            if re.search(r"[bcdfghjklmnpqrstvwxyz]{2}$", tok) and not re.search(r"(?:sh|ch|th|dh|bh|kh|gh|ph|jh|nt|nd|nk|ng|nj|mb|mp|rk|st)$", tok):
+                tok += "a"   # restore the final schwa of a conjunct ("-endr" -> "-endra")
         return self.scorer.prob(norm_latin(tok))
 
     def plausible_name_tok(self, tok):
@@ -274,6 +441,29 @@ class Detector:
         if tl in _PLACE_WORDS or tl in lex.surnames:
             return tl in lex.surnames and not lex.is_surname_only(t)
         return True
+
+    def plausible_name_tok_deva(self, tok, min_p=0.5):
+        """An unknown Devanagari word that can still be a given name (used only next to a name cue)."""
+        t = tok.rstrip(".।")
+        if len(t) < 2 or not has_devanagari(t) or t in self.lex.stop_hindi or t in self.lex.honor_pre or t in self.lex.honor_suf:
+            return False
+        lat = devanagari_to_latin(t)
+        f = fold(lat)
+        lex = self.lex
+        if not f or lat in lex.medical or f in lex.medical or lat in lex.common or lat in lex.stop_latin or lex.is_place(t):
+            return False
+        if self.is_surname_only_any(t) or t in _ROLE_NOUNS:
+            return False
+        sk = skeleton(lat)
+        if len(sk) >= 4 and sk in lex.loan_sk:
+            return False   # English loanword in Devanagari ("सैंपल" ~ sample, "रिपोर्ट" ~ report)
+        return min_p <= 0.0 or self.name_score(lat) >= min_p
+
+    def is_surname_only_any(self, tok):
+        """Family name / gendered suffix in either script (Devanagari via transliteration)."""
+        if has_devanagari(tok):
+            return self.lex.is_surname_only(devanagari_to_latin(tok.rstrip(".।")))
+        return self.lex.is_surname_only(tok)
 
     def tok_ok(self, tok, lenient):
         if has_devanagari(tok):
@@ -445,10 +635,12 @@ class Detector:
                 continue
             en = st + len(seg)
             spans.append(Span(st, en, "ADDRESS", seg, meta=self.parse_address(seg, m.group(1))))
+        spans.extend(self._structural_addresses(text, spans))
         # C. label:value lines
         spans.extend(self._label_values(text, norm))
         # D. names
         spans.extend(self._names(text))
+        spans.extend(self._cueless_names(text))
         if _NF_MODE:
             spans = [sp for sp in spans if not self._weak_negative_context(text, sp)]
             base = self.resolve(spans)
@@ -709,6 +901,8 @@ class Detector:
                 continue
             if r:
                 w = text[r[0]:r[1]]
+                if not has_devanagari(w) and w[0].islower() and re.match(r"\s+(?:hua|hue|hui|hai|hain|tha|the|thi|kiya|kiye|gaya|gayi|gaye|hoga|hogi)\b", text[r[1]:r[1] + 8]):
+                    continue   # "Mareez bharti hua": a lower-case predicate word, not a name
                 if has_devanagari(w) or w[0].isupper() or fold(w.split()[0]) in self.dyn or fold(w.split()[0]) in lex.names_f:
                     out.append(Span(r[0], r[1], "NAME", w, role="patient"))
         # context cues that need no gazetteer: "witnessed by X Y", "X Y (attendant, ...)", "X Y, mob 98..."
@@ -735,7 +929,14 @@ class Detector:
             s, e, w = toks[i]
             seed = False
             wc = w.rstrip(".")
-            if has_devanagari(wc):
+            sur_seed = False
+            if i > 0 and self._joinable(text, toks[i - 1], toks[i]) and self.is_surname_only_any(wc) \
+                    and (has_devanagari(wc) or wc[:1].isupper()):
+                pw0 = toks[i - 1][2]
+                sur_seed = self.plausible_name_tok_deva(pw0, 0.0) if has_devanagari(wc) else self.plausible_name_tok(pw0)
+            if sur_seed:
+                seed = True
+            elif has_devanagari(wc):
                 seed = self._tok_ok_deva(wc, False)
             else:
                 f = fold(wc)
@@ -753,12 +954,20 @@ class Detector:
             j = i
             # a family name / gendered suffix ("... Devi", "... Yadav", "... Bano") is preceded by the
             # given name even when that given name is in no gazetteer: accept up to two plausible tokens
-            lead = 2 if (not has_devanagari(wc) and lex.is_surname_only(wc)) else 0
+            # a known given name also pulls in ONE adjacent unknown word that strongly looks like a name
+            # ("<unknown> Prasad"); Devanagari works the same way through transliteration
+            if self.is_surname_only_any(wc):
+                lead, lead_p = 2, 0.0
+            else:
+                lead, lead_p = 1, 0.8
             while j - 1 >= 0 and self._joinable(text, toks[j - 1], toks[j]):
                 pw = toks[j - 1][2]
                 if re.fullmatch(r"[A-Z]\.?|(?:[A-Z]\.){2,3}", pw) or (self.tok_ok(pw, False)):
                     j -= 1
-                elif lead and self.plausible_name_tok(pw):
+                elif lead and has_devanagari(pw) and has_devanagari(wc) and self.plausible_name_tok_deva(pw, lead_p):
+                    j -= 1
+                    lead -= 1
+                elif lead and not has_devanagari(pw) and self.plausible_name_tok(pw) and (lead_p == 0.0 or self.name_score(pw) >= lead_p):
                     j -= 1
                     lead -= 1
                 else:
