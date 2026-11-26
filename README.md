@@ -5,7 +5,7 @@ bundles, free-text notes in English, Devanagari Hindi and Hinglish) into a resea
 direct identifiers removed, the same patient linked across files and hospitals under one keyed
 pseudonym (`PSN-XXXXXX`), quasi-identifiers generalised, and all clinical content kept.
 
-**Team BreakThrough.** The 2-page Project Brief PDF is submitted alongside this repository.
+**Team BreakThrough.** The 2-page Project Brief PDF is [`docs/brief.pdf`](docs/brief.pdf).
 
 ## What makes it different (USP)
 
