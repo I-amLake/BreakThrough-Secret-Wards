@@ -36,7 +36,7 @@ def has_devanagari(s):
 def _syllabify(word):
     """Return list of units: (kind, latin, has_inherent_a)."""
     units = []
-    chars = list(unicodedata.normalize("NFC", word))
+    chars = [c for c in unicodedata.normalize("NFC", word) if c not in "\u200c\u200d"]
     i = 0
     while i < len(chars):
         c = chars[i]

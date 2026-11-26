@@ -241,6 +241,25 @@ def is_patient_span(sp, ctx):
     return bool(toks) and any(t in ctx.patient_keys for t in toks)
 
 
+_WD_FULL = (r"monday|tuesday|wednesday|thursday|friday|saturday|sunday"
+            r"|somv[aw]a?r|mangalv[aw]a?r|budhv[aw]a?r|guruv[aw]a?r|brihaspativ[aw]a?r|shukrav[aw]a?r|shaniv[aw]a?r|raviv[aw]a?r"
+            r"|सोमवार|मंगलवार|बुधवार|गुरुवार|बृहस्पतिवार|शुक्रवार|शनिवार|रविवार|इतवार")
+_RX_WD_FULL = re.compile(r"(?i)(?<![\w\u0900-\u097F])(?:%s)(?![\w\u0900-\u097F])" % _WD_FULL)
+_RX_DATEISH = re.compile(r"\d{1,4}[-/.]\d{1,2}[-/.]\d{2,4}|(?i:\b\d{1,2}\s*(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b)")
+_RX_WD_ABBR_NEAR = re.compile(r"(?i)\b(?:mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun)\b\.?,?(?=\s{0,2}\d{1,4}[-/.])")
+
+
+def weekday_scrub(text):
+    """A weekday next to a shifted date tells an attacker the TRUE weekday (shift mod 7) and narrows
+    "admitted on a Tuesday" candidates. On lines that carry a date, weekday names become [DAY]."""
+    lines = text.split("\n")
+    for i, ln in enumerate(lines):
+        if _RX_DATEISH.search(ln):
+            ln = _RX_WD_FULL.sub("[DAY]", ln)
+            lines[i] = _RX_WD_ABBR_NEAR.sub("[DAY] ", ln).replace("[DAY]  ", "[DAY] ")
+    return "\n".join(lines)
+
+
 def render(text, spans, ctx):
     """Apply replacements. Returns (new_text, n_identifiers, entity_counter_dict)."""
     eng = ctx.eng
@@ -293,7 +312,10 @@ def render(text, spans, ctx):
         if k in PII_KINDS:
             n += 1
     out.append(text[last:])
-    return "".join(out), n, ents
+    new = "".join(out)
+    if ctx.shift and any(sp.kind in ("DATE", "DOB") for sp in spans):
+        new = weekday_scrub(new)
+    return new, n, ents
 
 
 _RX_B64 = re.compile(r"[A-Za-z0-9+/]{40,}={0,2}")

@@ -411,6 +411,7 @@ class Engine:
                 if not dot:
                     stem, ext = part, ""
                 ns, ch = core.sanitize_token_string(stem, self, None)
+                ns = self._shift_name_dates(ns, d)
                 if ch:
                     ns = re.sub(r"(redacted[_\- ]*)+", "redacted_", ns).strip("_- ") or "file"
                     ns = ns + "_" + self.keys.token("fname", d.sha, 8)
@@ -429,6 +430,30 @@ class Engine:
             rel = (stem + "_%d." % n + ext) if dot else base + "_%d" % n
         used.add(rel)
         return rel
+
+    _RX_FNAME_DATE = re.compile(r"(?<!\d)(?:((?:19|20)\d{2})([-_.]?)(0[1-9]|1[0-2])\2(0[1-9]|[12]\d|3[01])"
+                                r"|(0[1-9]|[12]\d|3[01])([-_.])(0[1-9]|1[0-2])\6((?:19|20)\d{2}))(?!\d)")
+
+    def _shift_name_dates(self, stem, d):
+        """A visit date in a file name ("opd_2024-03-05.txt") is a real date: shift it like the dates
+        inside the file (the record's own shift, or the file shift for multi-patient files)."""
+        if not self._RX_FNAME_DATE.search(stem):
+            return stem
+        import datetime as dt
+        ctx = self.unit_ctx(d, d.units[0]) if len(d.units) == 1 else self.file_ctx(d)
+
+        def sub(m):
+            try:
+                if m.group(1):
+                    v = dt.date(int(m.group(1)), int(m.group(3)), int(m.group(4))) + dt.timedelta(days=ctx.shift)
+                    sep = m.group(2)
+                    return "%04d%s%02d%s%02d" % (v.year, sep, v.month, sep, v.day)
+                v = dt.date(int(m.group(8)), int(m.group(7)), int(m.group(5))) + dt.timedelta(days=ctx.shift)
+                sep = m.group(6)
+                return "%02d%s%02d%s%04d" % (v.day, sep, v.month, sep, v.year)
+            except ValueError:
+                return m.group(0)
+        return self._RX_FNAME_DATE.sub(sub, stem)
 
     def build_sweep(self):
         """Exact-value residual sweep over every identifier value seen in this input (set lookups, O(text))."""

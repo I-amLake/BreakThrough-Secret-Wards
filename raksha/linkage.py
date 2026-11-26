@@ -319,6 +319,26 @@ class Linker:
                 x = parent[x]
             return x
 
+        # linkable neighbours per record, packed (CSR: offsets + one int array, ~8 B per edge end)
+        deg = array("q", [0]) * (N + 1)
+        for sc in buckets:
+            for key in buckets[sc]:
+                a, b = divmod(key, N)
+                deg[a + 1] += 1
+                deg[b + 1] += 1
+        for i in range(1, N + 1):
+            deg[i] += deg[i - 1]
+        nbr = array("q", [0]) * deg[N]
+        fill = array("q", deg)
+        for sc in sorted(buckets, reverse=True):
+            for key in buckets[sc]:
+                a, b = divmod(key, N)
+                nbr[fill[a]] = b
+                fill[a] += 1
+                nbr[fill[b]] = a
+                fill[b] += 1
+        del fill
+
         def vetoed_pair(a, b):
             a, b = (a, b) if a < b else (b, a)
             k = a * N + b
@@ -328,9 +348,23 @@ class Linker:
                     vetoed.add(k)
             return k in vetoed
 
+        def clusters_vetoed(r1, r2):
+            return any(vetoed_pair(x, y) for x in members[r1] for y in members[r2])
+
+        def ambiguous(x):
+            """Homonym guard: a lone record linkable to two clusters that are provably different people
+            (a veto between them, e.g. same name but different father) cannot be assigned: abstain."""
+            roots = sorted({find(c) for c in nbr[deg[x]:deg[x + 1]]} - {find(x)})[:12]
+            return any(clusters_vetoed(roots[i], roots[j]) for i in range(len(roots)) for j in range(i + 1, len(roots)))
+
         for negsc, a, b in edges():
             ra, rb = find(a), find(b)
             if ra == rb:
+                continue
+            # (only for name-based edges: a shared exact ID or phone is not a homonym question)
+            pa, pb = byid[a], byid[b]
+            hard = bool(pa.phones & pb.phones) or any(pb.ids.get(k) and (v & pb.ids[k]) for k, v in pa.ids.items())
+            if not hard and ((len(members[ra]) == 1 and ambiguous(a)) or (len(members[rb]) == 1 and ambiguous(b))):
                 continue
             ok = True
             for x in members[ra]:

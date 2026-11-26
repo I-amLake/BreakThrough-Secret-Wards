@@ -319,6 +319,11 @@ v1.3 (0 leaks either way).
   `Nagar/Tola/Colony/नगर/टोला`, landmarks such as `near X Mandir`, `X मंदिर के पास`, PIN after a place);
   a locality without a head word or landmark is still missed.
 * Linkage is deliberately conservative: first-name-only fragments without phone/ID/relative stay unlinked.
+* Homonym guard: a record whose only link evidence is name/age/place and that fits two clusters already
+  proven to be different people (a veto between them, e.g. same name but different father) stays unlinked.
+* Date side channels: dates in file names move with the file's own shift, and weekday names on a line
+  with a shifted date become `[DAY]` (they would reveal the true weekday). Festival names ("Holi",
+  "Diwali") are kept as clinical context and can still hint at the season.
 * k-anonymity is computed within the release. With the default policy, k = 5 is not met for every
   patient (75% of the 48 practice patients sit in classes below 5 on band/sex/district); the registry
   attacker numbers above are the honest measure. `suppress_below_k: true` enforces it.

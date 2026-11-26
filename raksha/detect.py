@@ -36,7 +36,7 @@ class Span:
 
 
 # ------------------------------------------------------------------ Stage A: shielding
-_UNITS = r"(?:mg|mcg|µg|ug|gm|g|kg|ml|mL|l|L|iu|IU|units?|U|meq|mEq|%|mmhg|mmHg|bpm|/min|mg/dl|mg/dL|g/dl|g/dL|mmol/l|mmol/L|/ul|/uL|/cumm|lakh|cells|°F|°C|F|C|cm|mm|puffs?|tabs?|caps?|drops?)"
+_UNITS = r"(?:mg|mcg|µg|ug|gm|g|kg|ml|mL|l|L|iu|IU|units?|U|meq|mEq|%|mmhg|mmHg|bpm|/min|mg/dl|mg/dL|g/dl|g/dL|mmol/l|mmol/L|/ul|/uL|/cumm|lakh|cells|°F|°C|cm|mm|puffs?|tabs?|caps?|drops?)"
 SHIELD_RX = [
     re.compile(r"(?i)(?<![0-9a-f-])[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?![0-9a-f-])"),   # UUIDs (FHIR ids)
     # organisation names: "Navodaya Charitable Hospital", "Seva Sadan", "City Labs"
@@ -44,6 +44,8 @@ SHIELD_RX = [
     re.compile(r"\b(?i:District|Civil|General|Community|Primary|Sub[- ]?District|Women'?s?|Base|Railway|ESI|Government|Govt\.?|Zila)[ \t]+(?i:Hospital|Chikitsalaya|Health Centre|Health Center)(?:[ \t]+[A-Z][a-z]+)?"),
     re.compile(r"\b[0-5]\s?-\s?[0-5]\s?-\s?[0-5](?:\s?-\s?[0-5])?\b"),                     # 1-0-1
     re.compile(r"\b\d+(?:\.\d+)?[ \t]?" + _UNITS + r"(?![A-Za-z])"),                          # 5 mg
+    # bare F / C only in body-temperature ranges: "101F", "38.5 C" (but "47F" is an age + sex)
+    re.compile(r"\b(?:9\d|1[01]\d)(?:\.\d+)?[ \t]?F(?![A-Za-z])|\b(?:3[4-9]|4[0-4])(?:\.\d+)?[ \t]?C(?![A-Za-z])"),
     re.compile(r"\b(?:BP|B\.P\.?)\s*[:=-]?\s*\d{2,3}\s*/\s*\d{2,3}(?:\s*mm\s?hg)?", re.I),    # BP 150/90
     re.compile(r"\b(?:HR|PR|RR|SpO2|SPO2|Temp|T|Pulse|RBS|FBS|PPBS|HbA1c|Hb|TLC|Plt|Platelets?|Cr|Creat|eGFR|TSH|Na|K|INR|ESR|CRP|Wt|Ht|BMI|GCS)\s*[:=-]?\s*\d+(?:[.,]\d+)*", re.I),
     re.compile(r"\b[xX×]\s?\d+\s?(?:days?|d|wks?|weeks?|months?|mths?|yrs?|years?|दिन)\b"),  # x 5 days
@@ -92,9 +94,9 @@ STATES = ["andhra pradesh", "arunachal pradesh", "assam", "bihar", "chhattisgarh
           "ladakh", "puducherry", "chandigarh", "उत्तर प्रदेश", "बिहार", "मध्य प्रदेश", "राजस्थान", "दिल्ली"]
 RX_STATE = re.compile(r"(?i)\b(" + "|".join(re.escape(s) for s in STATES) + r"|[A-Z][a-z]+\s+Pradesh|[\u0900-\u097F]+\s+प्रदेश)\b")
 
-_AGE_UNIT = r"(?:years?|yrs?\.?|yr\.?|y\.?o\.?|yo|y|Y|yr\s+old|years?\s+old|वर्ष(?:ीय)?|साल|saal|sal|baras)"
+_AGE_UNIT = r"(?:years?|yrs?\.?|yr\.?|y\.?o\.?|yo|y|Y|yr\s+old|years?\s+old|वर्ष(?:ीय)?|साल|saal|sal|baras|varsh)"
 RX_AGE = [
-    re.compile(r"(?i)\b(?:age[d]?|aged|umar|umr|उम्र|आयु)(?:\s*/\s*(?:sex|gender|ling|लिंग))?\s*[:\-=]?\s*(\d{1,3})(?!\d)"),
+    re.compile(r"(?i)\b(?:age[d]?|aged|umar|umr|umra|aayu|aayu|ayu|उम्र|उमर|आयु)(?:\s*/\s*(?:sex|gender|ling|लिंग))?\s*[:\-=]?\s*(\d{1,3})(?!\d)"),
     re.compile(r"(?<![\w/])(\d{1,3})\s?(?:-?\s?years?-?\s?old|-year-old|yrs?\s?old|y/o|yo\b|y\.o\.)", re.I),
     re.compile(r"(?<![\w/.])(\d{1,3})\s?(?i:y|yr|yrs|years?)\.?\s?[/,]?\s?(?:M|F|Male|Female|male|female)\b"),
     re.compile(r"(?<![\w/.])(\d{1,3})\s?/\s?(?:M|F|Male|Female)\b"),
@@ -195,6 +197,10 @@ _LMK_HEAD_D = r"(?:मंदिर|मस्जिद|स्कूल|विद�
 _ROOT_L = r"(?:[A-Z][a-z]+(?:\s(?!(?:Pani|Post|Petrol|Railway|Bus|Water)\b)[A-Z][a-z]+)?)"
 _ROOT_D = r"(?:[\u0900-\u0963\u0970-\u097F]+(?:\s(?!(?:पानी|पेट्रोल|बस)\s)[\u0900-\u0963\u0970-\u097F]+)?)"
 _HOUSE = r"(?:\d{1,4}(?:\s?[/-]\s?\d{1,4})?[A-Za-z]?)"
+RX_HOUSE_CUE = re.compile(r"(?i)(?<![\w\u0900-\u097F])(?:(?:ghar|makaa?n|house|flat|मकान|घर)\s*(?:no\.?|number|nambar|नं\.?|नंबर|संख्या)|h\.?\s?no\.?)"
+                          r"\s*[:\-.]?\s*(\d{1,4}(?:\s?[/-]\s?\d{1,4})?[A-Za-z]?)(?![\d/])")
+RX_HEAD_FIRST = re.compile(r"(?<![\w\u0900-\u097F])(?:Tola|Mohalla|Purwa|Basti|टोला|मोहल्ला|पुरवा|बस्ती)[ \t]+([A-Z][a-z]{2,}|[\u0900-\u097F]{2,})(?![\w\u0900-\u097F])")
+RX_ADDR_TAIL = re.compile(r"[ \t]*,[ \t]*([A-Z][a-z]{3,}|[\u0900-\u097F]{3,})(?=\s*(?:[.,;।\n]|$))")
 RX_LOC_L = re.compile(r"(?<![\w/])(?:(" + _HOUSE + r")\s*[,\-]?\s*)?(" + _ROOT_L + r")\s+" + _LOC_HEAD_L + r"(?![A-Za-z])")
 RX_LOC_D = re.compile(r"(?<![\w\u0900-\u097F/])(?:(" + _HOUSE + r")\s*[,\-/]?\s*)?(" + _ROOT_D + r")\s+" + _LOC_HEAD_D + r"(?![\u0900-\u097F])")
 RX_LMK_L = re.compile(r"(?i:\b(?:near|nr\.?|opp\.?|opposite|behind|beside|next\s+to|in\s+front\s+of)\s+)(?:the\s+)?(" + _ROOT_L + r"\s+)?" + _LMK_HEAD_L + r"\b"
@@ -342,6 +348,21 @@ class Detector:
             if m.group(1) and not self._root_ok(m.group(1)):
                 continue
             add(m.start(), m.end(), False)
+        # Hinglish/Hindi house-number cue ("Ghar no 56", "मकान नं. 12") and head-first localities ("Tola Pashchim")
+        for m in RX_HOUSE_CUE.finditer(text):
+            add(m.start(), m.end(), True)
+        for m in RX_HEAD_FIRST.finditer(text):
+            if self._root_ok(m.group(1)):
+                add(m.start(), m.end(), False)
+        # a structural chain "<house>, <locality>, <Village>." also takes the final village word (a known
+        # district / city stays: it is released at district level anyway)
+        for sp in list(out):
+            t = RX_ADDR_TAIL.match(text, sp.end)
+            if t and sp.meta.get("structural") and self._root_ok(t.group(1)) and not self.lex.is_place(t.group(1)) and not any(
+                    t.start(1) < b and a < t.end(1) for a, b in taken):
+                out.append(Span(t.start(1), t.end(1), "ADDRESS", t.group(1),
+                                meta=dict(self.parse_address(t.group(1)), structural=True, house=False)))
+                taken.append((t.start(1), t.end(1)))
         # a PIN right after a place word or after a structural address on the same line
         for m in RX_PIN_AFTER_PLACE.finditer(text.translate(DIGITS)):
             line_start = text.rfind("\n", 0, m.start()) + 1
@@ -903,7 +924,10 @@ class Detector:
                 w = text[r[0]:r[1]]
                 if not has_devanagari(w) and w[0].islower() and re.match(r"\s+(?:hua|hue|hui|hai|hain|tha|the|thi|kiya|kiye|gaya|gayi|gaye|hoga|hogi)\b", text[r[1]:r[1] + 8]):
                     continue   # "Mareez bharti hua": a lower-case predicate word, not a name
-                if has_devanagari(w) or w[0].isupper() or fold(w.split()[0]) in self.dyn or fold(w.split()[0]) in lex.names_f:
+                w0 = w.split()[0]
+                lower_ok = (fold(w0) in self.dyn or fold(w0) in lex.names_f) and not (
+                    lex.is_common(w0) or lex.is_stop(w0) or lex.is_medical(w0.lower()))  # "Patient seen": "seen" folds like "Sen"
+                if has_devanagari(w) or w[0].isupper() or lower_ok:
                     out.append(Span(r[0], r[1], "NAME", w, role="patient"))
         # context cues that need no gazetteer: "witnessed by X Y", "X Y (attendant, ...)", "X Y, mob 98..."
         for m in RX_BY_CUE.finditer(text):

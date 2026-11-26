@@ -94,7 +94,13 @@ def read_nofollow(path):
 
 
 def decode(data):
-    """Decode bytes to str. Raises GarbledText / BinaryFile."""
+    """Decode bytes to str (NFC, no zero-width joiners inside Devanagari words).
+    Raises GarbledText / BinaryFile / EmptyFile."""
+    text = _decode(data)
+    return _RX_ZW_DEVA.sub("", unicodedata.normalize("NFC", text))
+
+
+def _decode(data):
     if not data:
         raise EmptyFile()
     for magic in BINARY_MAGIC:
@@ -132,7 +138,12 @@ def decode(data):
     ctrl = sum(1 for c in text[:20000] if (unicodedata.category(c) == "Cc" and c not in "\r\n\t\f") or c == "\ufffd")
     if ctrl > max(3, 0.02 * min(len(text), 20000)):
         raise BinaryFile()
-    return unicodedata.normalize("NFC", text)
+    return text
+
+
+# zero-width joiners inside Devanagari words are rendering hints; left in, they split a name into two
+# "words" (half of it escapes detection) and break transliteration
+_RX_ZW_DEVA = re.compile(r"(?<=[\u0900-\u097F])[\u200c\u200d]+(?=[\u0900-\u097F])")
 
 
 def sniff_kind(relpath, text):

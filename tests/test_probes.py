@@ -8,6 +8,7 @@ import csv
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -125,6 +126,75 @@ class Probes(unittest.TestCase):
         self.assertEqual(c["records_suppressed"], 0)
         st = {json.loads(l).get("status") for l in open(os.path.join(self.out, "records.jsonl")) if l.strip()}
         self.assertNotIn("suppressed", st)
+
+
+class Probes2(unittest.TestCase):
+    """v1.6 probes: date side channels, ages, zero-width joiners, clinical shorthand, address frames, homonyms."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.w = tempfile.mkdtemp(prefix="probes2_")
+        cls.inp = os.path.join(cls.w, "in")
+        os.makedirs(cls.inp)
+        def put(rel, txt):
+            open(os.path.join(cls.inp, rel), "w", encoding="utf-8").write(txt)
+        put("opd_2024-03-05_visit.txt", "Patient: Tevan Orlikar, 47/F, admitted 05/03/2024, discharged 14/03/2024 (Thursday).\n"
+            "Patient seen in OPD. (47F) aayu 47 varsh. Temp 101F. K/C/O DM, HTN. H/O CAD. TLC 11,200 /cumm.\n"
+            "LOINC 718-7, SNOMED 38341003. Tab Amlodipine 5 mg 1-0-1 x 5 days. Syp 10 ml TDS. १-०-१ खाने के बाद।\n")
+        put("zw.txt", "\u0928\u093e\u092e: \u091f\u0947\u200d\u0935\u0928 \u0913\u0930\u200c\u0932\u093f\u0915\u0930\n"
+            "\u092e\u0930\u0940\u091c\u093c \u091f\u0947\u200d\u0935\u0928 \u0915\u094b \u092c\u0941\u0916\u093e\u0930\u0964\n")
+        put("addr.txt", "Name: Zevrina Dovral\nMareez ka ghar no 56, Tola Pashchim, Brindapur.\n"
+            "\u092e\u0915\u093e\u0928 \u0928\u0902. 12, \u091f\u094b\u0932\u093e \u0915\u0932\u0935\u094b, fever.\n"
+            "Ghar 3 din se band tha. Referred from Basti district.\n")
+        put("homonym.csv", "patient_name,age,sex,father_name,village,diagnosis\n"
+            "Qelvo Dramik,52,M,Kelvansh Dramik,Brindapur,dengue\nQelvo Dramik,52,M,Pimmo Dramik,Brindapur,typhoid\n"
+            "Qelvo Dramik,53,M,,Brindapur,malaria\n")
+        cls.out = os.path.join(cls.w, "out")
+        cls.r = run(cls.inp, cls.out)
+        cls.rep, cls.outs = outputs(cls.out)
+        import hashlib
+        cls.by = {rel: cls.outs.get(hashlib.sha256(open(os.path.join(cls.inp, rel), "rb").read()).hexdigest(), "")
+                  for rel in os.listdir(cls.inp)}
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.w, ignore_errors=True)
+
+    def test_dates_and_ages(self):
+        t = self.by["opd_2024-03-05_visit.txt"]
+        self.assertNotIn("Thursday", t)
+        self.assertNotIn("05/03/2024", t)
+        names = [f["output"] for f in self.rep["files"] if f["output"]]
+        self.assertFalse(any("2024-03-05" in n for n in names), names)
+        # the file-name date moves with the admission date inside the file
+        adm = re.search(r"admitted (\d\d)/(\d\d)/(\d{4})", t)
+        self.assertTrue(any("%s-%s-%s" % (adm.group(3), adm.group(2), adm.group(1)) in n for n in names), names)
+        for bad in ("(47F)", "47 varsh", "47/F"):
+            self.assertNotIn(bad, t)
+
+    def test_clinical_shorthand_kept(self):
+        t = self.by["opd_2024-03-05_visit.txt"]
+        for good in ("Patient seen in OPD", "Temp 101F", "K/C/O DM, HTN", "H/O CAD", "TLC 11,200 /cumm", "LOINC 718-7",
+                     "SNOMED 38341003", "5 mg 1-0-1 x 5 days", "10 ml TDS", "\u0967-\u0966-\u0967"):
+            self.assertIn(good, t)
+
+    def test_zero_width_joiner_name(self):
+        t = self.by["zw.txt"]
+        self.assertNotIn("\u0935\u0928 \u0915\u094b", t)   # second half of the split name
+        self.assertNotIn("\u091f\u0947", t)
+
+    def test_triggerless_address_frames(self):
+        t = self.by["addr.txt"]
+        for bad in ("56", "Pashchim", "Brindapur", "\u0915\u0932\u0935\u094b", "Zevrina"):
+            self.assertNotIn(bad, t)
+        self.assertIn("Ghar 3 din se band tha", t)
+        self.assertIn("Basti", t)
+
+    def test_homonym_abstention(self):
+        recs = [json.loads(l) for l in open(os.path.join(self.out, "records.jsonl")) if '"homonym' in l or "homonym" in l]
+        rows = {r["loc"]: r["patient"] for r in recs}
+        self.assertNotEqual(rows["row:0"], rows["row:1"])          # different fathers: different people
+        self.assertNotIn(rows["row:2"], (rows["row:0"], rows["row:1"]))  # fits both: abstain
 
 
 class Release(unittest.TestCase):
