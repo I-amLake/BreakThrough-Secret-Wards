@@ -1,0 +1,13 @@
+# Stigmatised-condition vocabulary (public clinical / programme terms; English, Devanagari Hindi, Hinglish).
+# Motivated by the HIV/AIDS (Prevention & Control) Act 2017, Mental Healthcare Act 2017, MTP Act 1971/2021,
+# POCSO Act 2012, PCPNDT Act 1994 and the stigma attached to TB and leprosy. Hand-written; not derived from
+# any kit or practice data. Format: CATEGORY | term | term ... ; terms are matched case-insensitively as
+# whole words, except those written in CAPITALS here, which must appear in capitals (short acronyms).
+HIV | HIV | AIDS | PLHIV | PLHA | HIV positive | HIV reactive | HIV+ | ART centre | ART center | ART clinic | on ART | antiretroviral | anti-retroviral | ICTC | PPTCT | CD4 count | TLD regimen | dolutegravir | zidovudine | nevirapine | efavirenz | एचआईवी | एड्स | एआरटी केंद्र
+TB | TB | tuberculosis | tubercular | PTB | EPTB | MDR-TB | XDR-TB | ATT | anti-tubercular | DOTS | Nikshay | koch's | kochs | टीबी | तपेदिक | क्षय रोग | kshay rog | tapedik
+MENTAL | schizophrenia | schizophrenic | bipolar disorder | bipolar affective | psychosis | psychotic | suicide attempt | attempted suicide | suicidal | self-harm | self harm | deliberate self poisoning | intentional overdose | major depressive | psychiatric illness | mental illness | manasik rog | manasik bimari | aatmhatya | atmahatya | khudkushi | मानसिक रोग | मानसिक बीमारी | आत्महत्या | ख़ुदकुशी | खुदकुशी
+MTP | MTP | medical termination of pregnancy | termination of pregnancy | induced abortion | garbhpaat | garbhpat | गर्भपात | गर्भ समापन
+ASSAULT | sexual assault | sexually assaulted | rape | raped | POCSO | molestation | balatkar | बलात्कार | यौन उत्पीड़न | यौन शोषण | दुष्कर्म
+LEPROSY | leprosy | Hansen's disease | hansens | MB-MDT | PB-MDT | kusht | kushth rog | कुष्ठ | कोढ़
+SUBSTANCE | alcohol dependence | alcohol dependence syndrome | opioid dependence | substance use disorder | substance abuse | drug addiction | de-addiction | deaddiction | nasha mukti | nasha mukti kendra | buprenorphine | OST centre | IDU | injecting drug use | smack addiction | नशा मुक्ति | नशामुक्ति | नशे की लत
+SEXDET | sex determination | sex selection | PCPNDT | PC-PNDT | ling parikshan | ling jaanch | bhrun hatya | female foeticide | लिंग परीक्षण | लिंग जांच | भ्रूण हत्या

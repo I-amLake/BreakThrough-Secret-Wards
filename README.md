@@ -9,6 +9,19 @@ pseudonym (`PSN-XXXXXX`), quasi-identifiers generalised, and all clinical conten
 
 ## What makes it different (USP)
 
+0. **Stigma Shield: extra protection for the patients a leak would hurt most.** A record that mentions
+   HIV, TB, mental illness or a suicide attempt, MTP/abortion, sexual assault/POCSO, leprosy, substance use
+   or sex determination (English, Devanagari or Hinglish: `PLHIV`, `ICTC`, `मानसिक रोग`, `garbhpaat`,
+   `nasha mukti`, ...) marks its patient. Indian law singles these out (HIV/AIDS Act 2017, Mental
+   Healthcare Act 2017, MTP Act, POCSO, PCPNDT). For those patients only: wider age bands, state-only
+   location when the district would leave them in a class below k, the name of the condition-revealing
+   facility removed (`ART Centre, [FACILITY]`) while the diagnosis, codes and values stay, stricter name
+   detection, and a **honey-PII self-check**: every identifier found in their notes is swapped in memory
+   for an invented one of the same shape (checksum-valid fake Aadhaar, same-format phone, synthesised
+   name at least as name-like as the original), the note is sanitised again, and if any planted value
+   survives the note is re-sanitised in the strictest mode (or quarantined if a planted number or most
+   planted names still survive). Only counts reach `report.json` (`stigma_shield`). 30-second demo:
+   `bash dev_eval/demo_stigma.sh`.
 1. **Three scripts, one person.** Names are matched across English, Devanagari and Hinglish through
    schwa-aware transliteration, a phonetic fold and a consonant skeleton, so `थिवरेश` in a Hindi note
    and `Thivaresh` in a CSV link to the same pseudonym.
@@ -45,7 +58,8 @@ pseudonym (`PSN-XXXXXX`), quasi-identifiers generalised, and all clinical conten
   `medical_terms.txt`: common generic/brand drug names and clinical vocabulary (keep-lists, never
   redacted as names). `stop_latin.txt`, `stop_hindi.txt`, `common_words.txt`, `honorifics.txt`,
   `honorific_suffixes.txt`: English/Hinglish/Hindi function words, admin words, titles and kinship
-  terms. In `raksha/namefind.py`: generic stoplists, pan-Indian surnames and short name onsets/endings
+  terms. `stigma_terms.txt`: public clinical and national-programme vocabulary for stigmatised
+  conditions (NACO/NTEP/NLEP/mental-health/MTP/POCSO/PCPNDT terms in three scripts). In `raksha/namefind.py`: generic stoplists, pan-Indian surnames and short name onsets/endings
   (morphology, not whole given names). The classifier weights come from synthetic tokens only (above).
 * Python 3.10+ standard library only: **no third-party packages at all**, so the output is
   byte-identical whether or not anything is pip-installed (verified on 3.10 and 3.13, with and without
@@ -73,6 +87,9 @@ python3 tests/test_namefind.py           # unseen-name finder (invented names) a
 python3 tests/acceptance_extended.py     # end-to-end traps, linkage, determinism, secret handling
 python3 tests/test_probes.py             # leak probes from reviews, output-folder safety, symlinks, report counts, hash seed
 python3 tests/test_isolation.py          # pipeline never imports dev_eval/ nor opens answer-key / attacker files
+python3 tests/test_stigma.py             # Stigma Shield: trilingual detector, honey values, planner, self-check counts
+python3 tests/test_improve.py            # self-improvement loop building blocks
+bash dev_eval/demo_stigma.sh             # 30-second before/after demo of the Stigma Shield (invented notes)
 bash tests/test_offline.sh               # pipeline under a no-network namespace
 python3 scripts/train_namefind.py        # optional: rebuilds raksha/namefind_weights.json byte-identically
 ```
@@ -110,6 +127,9 @@ raksha/
   handlers.py           per-format extract / rewrite (CSV/TSV, JSON, FHIR, text)
   linkage.py            rule-based record linkage with hard vetoes and veto-aware clustering
   privacy.py            age bands, location generalisation, k-anonymity planner, suppression, risk metrics
+  stigma.py, data/stigma_terms.txt
+                        Stigma Shield: trilingual stigmatised-condition vocabulary (public programme terms),
+                        facility-name removal, deterministic honey-PII generator for the self-check
   secure.py             HKDF key derivation, HMAC pseudonyms and date shifts, PII-free logging
   pipeline.py           orchestration, output paths, residual sweep, records.jsonl, report.json
 scripts/
@@ -120,6 +140,9 @@ dev_eval/               DEVELOPMENT EVALUATION ONLY - never imported or run by m
   attack_eval.py        approximation of the kit's registry attacker (A2/A3 record, A4 pooled) + an
                         age/district utility proxy, run on an output folder
   validate_output.py    minimal mirror of the output contract
+  improve.py            self-improvement loop for the name model (synthetic data only, promote-if-no-regression)
+  IMPROVE_LOG.md        its changelog
+  demo_stigma.sh, demo_stigma/   30-second Stigma Shield demo on two invented notes
 tests/
   acceptance_extended.py  Hindi/Hinglish linkage, same-name non-merge, C/O traps, FHIR, PII filename,
                           quarantine + canary, 9-day stay, determinism, secret sensitivity, unseen given names
@@ -129,6 +152,8 @@ tests/
                           vllm, llama_cpp, ollama, requests, httpx), network modules, model files
   test_probes.py          review leak probes + release hygiene
   test_isolation.py       runtime never touches evaluation material
+  test_stigma.py          Stigma Shield detector, honey values, planner escalation, end-to-end counts, determinism
+  test_improve.py         improve-loop held-out generator (names absent from every shipped list)
   test_namefind.py        unseen-name finder on invented names; drugs, complaints, places not redacted
   test_offline.sh         runs the pipeline under `unshare -rn` (no network namespace) or a socket guard
 ```
@@ -227,6 +252,8 @@ location:     {keep_pin3_at_level: -1, keep_district_up_to_level: 1, village_to:
 k_anonymity:  {k: 5, max_level: 1, rare_diagnosis_min_level: 1, rare_diagnosis_suppress: unique_with_facts,
                suppress_below_k: false}
 linkage:      {age_veto_years: 3, phone_degree_cap: 6, max_block: 300, ...}
+stigma_shield: {enabled: true, min_level: 1, state_if_below_k: [HIV, MENTAL, MTP, ASSAULT, SEXDET],
+               name_threshold_drop: 0.35, selfcheck: stigma, selfcheck_on_fail: auto}
 replacements: {relative: "[RELATIVE]", other_name: "[NAME]", unlinked_patient: "[PATIENT]"}
 ```
 
@@ -258,6 +285,39 @@ re-identified at ≥ 0.5 after pooling by pseudonym; raw QI-only attack: A2 0.20
 
 The default halves A4 for a small utility cost. Strict k = 5 is one switch away. On 48 patients it
 costs district probes and most of the generalisation score, so it is off by default.
+
+### Stigma Shield
+
+`raksha/stigma.py` reads `raksha/data/stigma_terms.txt`: hand-written public clinical and programme
+vocabulary in eight categories (HIV, TB, MENTAL, MTP, ASSAULT, LEPROSY, SUBSTANCE, SEXDET), in English,
+Devanagari and Hinglish. Short acronyms (`TB`, `ATT`, `MTP`, `ICTC`) must be in capitals; negated mentions
+(`HIV 1&2 non-reactive`, `no h/o TB`) do not count. A patient is flagged if any linked record mentions
+such a condition. For flagged patients only:
+
+* **Age and place.** At least level 1 (20-year bands). For the categories with a statutory
+  confidentiality duty (HIV, mental illness, MTP, sexual assault/POCSO, sex determination), a patient
+  still in a class below k at the highest level releases only the state, with a 40-year band. TB and
+  leprosy are notifiable diseases and keep the district: public-health use needs it.
+* **Facility names.** `ART Centre, Govt Medical College <town>` becomes `ART Centre, [FACILITY]` (also ICTC,
+  DOTS, de-addiction/nasha mukti, psychiatry, MTP and leprosy units). The service type, diagnosis text,
+  ICD codes, CD4/viral values and regimens stay.
+* **Names.** Unseen-name thresholds drop by 0.35 in their files. Relatives are always replaced (as for everyone).
+* **Honey-PII self-check** (free-text notes; `selfcheck: all` runs it on every note). Each detected name,
+  phone, Aadhaar or ID is swapped in memory for an invented value of the same shape, keyed by
+  HMAC(secret, file hash). Names are drawn until they are at least as name-like (to the same scorer) as the
+  original, so the check tests the detector's context and not luck. The shadow note goes through the
+  same detect + render path. If a planted value survives, the note is re-sanitised in the strictest mode
+  and checked again. If a planted number, or more than half the planted names, still survive, the file is
+  quarantined (`selfcheck_on_fail: auto`). Nothing planted is written or logged.
+  `report.json` → `stigma_shield`: `patients_flagged, records_flagged, records_hardened,
+  facility_names_removed, selfcheck_files, selfcheck_planted, selfcheck_caught, files_resanitized_strict,
+  files_requarantined`. These are counts only, and `validate_output.py` still says CONTRACT OK.
+
+The self-check paid for itself while it was being built. On invented notes it found three detector gaps,
+which are now fixed: a Devanagari name ending in `-डा` was read as the title `डा` (Dr), so the name
+leaked; the age/sex bracket frame (`<Name> (54/M), ...`) was missed; and the second name in
+`... to <Name> and <Name2>` depended on how name-like the word happened to be. It also exposed a
+`District X` parsing slip (`Distt. Rict X`).
 
 ### Security
 
@@ -307,6 +367,45 @@ Sealed sets were generated and scored once before their errors were inspected; t
 written after the first was inspected. The practice-set output is byte-identical between v1.1, v1.2 and
 v1.3 (0 leaks either way).
 
+Stigma Shield (v1.7). The same held-out notes as above, with one stigmatised-condition line appended to
+each file (rotating English/Hindi/Hinglish: HIV/ART, मानसिक रोग, nasha mukti, suicide attempt, MTP, TB/ATT):
+
+| set (mentions) | v1.6 recall / retention | v1.7 shield off | v1.7 shield on |
+|---|---:|---:|---:|
+| sealed set 2 + stigma line (337) | 0.837 / 0.9982 | 0.887 / 0.9982 | 0.896 / 0.9982 |
+| sealed set 1 + stigma line (451) | 0.878 / 0.9959 | 0.878 / 0.9959 | 0.907 / 0.9897 |
+| adversarial non-names + stigma line (retention) | 0.9615 | 0.9615 | 0.9615 |
+
+On the 2,000-file synthetic stress set, the self-check planted 3,050 values in 490 notes of flagged
+patients and caught all 3,050. Peak RSS stayed at 169 MB; run time went from 30 s to 35 s. The
+practice-set output files are byte-identical to v1.6: its 29 flagged (TB) patients were already at level ≥ 1, and their
+309 planted values were all caught (0 leaks, 4,851/4,855 medical values, linkage 1.00).
+
+## Keep improving it
+
+The name model can be retrained and checked on a laptop with no network and no packages:
+
+```bash
+cd <repo>
+python3 -m dev_eval.improve                         # one round
+python3 -m dev_eval.improve --rounds 10             # ten rounds, new seed each time
+python3 -m dev_eval.improve --rounds 5 --kit ../kit # also gate on the kit's practice check_dev
+python3 -m dev_eval.improve --extra-words fp.txt    # words it wrongly redacts (one per line) as negatives
+python3 -m dev_eval.improve --extra-names nm.txt    # extra INVENTED names as positives (never real patients)
+bash dev_eval/demo_stigma.sh && python3 tests/test_stigma.py   # then re-run the checks
+```
+
+Each round trains a candidate on the shipped synthetic set plus a fresh one (new seed, slightly varied
+hyper-parameters). It then writes a new held-out set of invented notes, with syllable names absent from every
+shipped list in English, Hinglish and Devanagari frames, plus person-frame sentences with no name. Both
+models run through the full pipeline in a temporary copy of the repo. The candidate replaces
+`raksha/namefind_weights.json` only if dev leaks stay 0 and nothing regresses: held-out token F1, name
+recall, non-PII retention, synthetic end-to-end leaks/clinical/linkage, and (with `--kit`) practice
+medical values and linkage. At least one of them must improve. Every round is appended to
+`dev_eval/IMPROVE_LOG.md`, and the loop never trains on real data. So far no candidate has been promoted:
+the candidates have higher token F1 but lower name recall at the detector's current thresholds,
+so the gate keeps the shipped weights.
+
 ## Known limitations
 
 * A given name never seen in a structured field, with no surname/suffix, Hinglish, honorific or role
@@ -329,6 +428,10 @@ v1.3 (0 leaks either way).
   attacker numbers above are the honest measure. `suppress_below_k: true` enforces it.
 * `report.json` timing and peak RSS differ between runs (required fields). Everything else, and every
   sanitized file and records.jsonl, is byte-identical for the same input and secret.
+* Stigma Shield: the honey self-check covers free-text notes. CSV/JSON/FHIR fields are typed by column
+  and key and are not self-checked. Facility names are removed from free text and JSON/FHIR strings,
+  but not from CSV cells. A patient whose stigmatised condition is described only in words outside the
+  vocabulary (for example a euphemism) is not flagged.
 * Formats beyond CSV/TSV/JSON/FHIR/text (NDJSON/JSON Lines, PDF, images, XML, HL7v2) are quarantined.
 
 ## Design notes and credits

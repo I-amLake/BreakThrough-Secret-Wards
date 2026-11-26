@@ -21,7 +21,7 @@ ICD_RX = re.compile(r"\b([A-TV-Z]\d{2}(?:\.\d{1,2})?)\b")
 class Unit:
     """One patient-bearing record (CSV row, JSON record, FHIR bundle, text document)."""
     __slots__ = ("loc", "out", "prof", "qi", "dates", "names_raw", "psn", "shift", "level", "rid", "key",
-                 "patient_keys", "age", "ref_date", "dx", "los", "band", "arange",
+                 "patient_keys", "age", "ref_date", "dx", "los", "band", "arange", "stigma", "stigma_pat",
                  "_name_parts", "_sex_hint", "_adm", "_dis")
 
     def __init__(self, loc, hospital):
@@ -40,6 +40,8 @@ class Unit:
         self.age = None
         self.ref_date = None
         self.dx = set()
+        self.stigma = ()      # stigma categories mentioned in this record (Stigma Shield)
+        self.stigma_pat = False   # the patient (any linked visit) is stigmatised
         self.los = None
         self.band = None      # patient-level released age band (same string for every visit)
         self.arange = None    # (min, max) true age of the patient across visits

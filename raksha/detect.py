@@ -86,7 +86,7 @@ RX_VILLAGE = re.compile(r"(?i)(?<![\w\u0900-\u097F])" + _VILL + r"\.?\s*[:\-]?\s
 RX_ADDR = re.compile(r"(?i)(?<![\w\u0900-\u097F])(" + _ADDR_TRIG + r")(?:\s*\([^)\n]{1,25}\))?[ \t]*[:\-–]?[ \t]*")
 RX_ADDR_STOP = re.compile(r"(?i)[\n|;]|\s(?:mob(?:ile)?|ph(?:one)?|contact|tel|age|sex|gender|aadhaa?r|uhid|mrn|dob|diagnosis|dx|c/o|complaint|उम्र|मोबाइल|फोन|आधार)(?![\w\u0900-\u097F])|(?<=[A-Za-z0-9\u0900-\u097F])\.\s+(?=[A-Z][a-z]+\s+[a-z])|(?<=[A-Za-z0-9\u0900-\u097F])\.\s+(?=[A-Z][A-Za-z/ ]{0,20}\s?:)|।")
 _ADDR_ABBR = {"vill", "distt", "dist", "teh", "h.no", "no", "p.o", "po", "ps", "near", "opp", "st", "rd", "gram", "mohalla", "sec", "nr"}
-RX_DISTRICT = re.compile(r"(?i)(?:distt?\.?|district|zila|zilla|जिला|जनपद)\s*[:\-]?\s*([A-Za-z\u0900-\u0963\u0970-\u097F]+(?:\s(?!pin|state|up\b)[A-Za-z\u0900-\u0963\u0970-\u097F]+)?)")
+RX_DISTRICT = re.compile(r"(?i)(?:(?<![a-z])(?:district|distt?\.?|zila|zilla)(?![a-z])|जिला|जनपद)\s*[:\-]?\s*([A-Za-z\u0900-\u0963\u0970-\u097F]+(?:\s(?!pin|state|up\b)[A-Za-z\u0900-\u0963\u0970-\u097F]+)?)")
 STATES = ["andhra pradesh", "arunachal pradesh", "assam", "bihar", "chhattisgarh", "goa", "gujarat", "haryana",
           "himachal pradesh", "jharkhand", "karnataka", "kerala", "madhya pradesh", "maharashtra", "manipur",
           "meghalaya", "mizoram", "nagaland", "odisha", "orissa", "punjab", "rajasthan", "sikkim", "tamil nadu",
@@ -172,6 +172,8 @@ _CL_HONOR_STATE = re.compile(r"(?:\s+(?:ab|अब|abhi|अभी))?\s+(?:theek|t
 _CL_EN_LEFT = re.compile(r"(?i)\b(?:(?:spoke|talked|discussed|explained|counsell?ed)(?:\s+[a-z]+){0,4}?\s+(?:to|with)|called(?:\s+back)?|informed|told|"
                          r"counsell?ed|reassured|phoned|met|consoled)\s+(?=[A-Z])")
 _CL_EN_SUBJ = re.compile(r"\s+(?:was|is|has\s+been|got|had\s+been)\s+(?:admitted|discharged|brought|counsell?ed|examined|operated|shifted|seen)\b", re.I)
+_CL_DEMO = re.compile(r"(?m)^[ \t]*((?:[A-Z][a-z]{2,}|[\u0900-\u097F]{2,})(?:[ \t]+(?:[A-Z][a-z]{2,}|[\u0900-\u097F]{2,})){0,2})"
+                      r"[ \t]*\([ \t]*\d{1,3}[ \t]*(?:y|yr|yrs|Y|वर्ष|साल)?[ \t]*/[ \t]*(?:M|F|m|f|पु|म|स्त्री)[ \t]*\)")
 _CL_MIN_P = 0.3   # name-scorer floor inside a person frame (the lexicon guards do most of the work)
 _CL_COND = {"haalat", "halat", "haalaat", "tabiyat", "tabiyet", "tabeeyat", "tabiyat", "sehat", "condition", "हालत", "तबीयत", "तबियत", "सेहत"}
 _CL_EXPERIENCER = re.compile(r"(?:\s+[A-Za-z\u0900-\u097F]+){1,3}?\s+(?:ho\s+rah[aie]|hai|hain|aaya|aayi|aaye|lag\s+rah[aie]|lagi|hua|hui|"
@@ -223,7 +225,7 @@ _PLACE_WORDS = {"hospital", "district", "tehsil", "village", "nagar", "pur", "ga
 # Hinglish subject/object markers after a capitalised word: "Thivaresh ne bataya", "Thivaresh aur uski wife"
 RX_HINGLISH_ARG = re.compile(r"(?<![\w.'])([A-Z][a-z]{2,})(?=\s+(?:ne|ko|ka|ki|ke|se|aur|bhi|ji|bole|boli|bola)\s+[a-z])")
 RX_REL_POST = re.compile(r"(?i)\s+(?:ki|ke|ka|की|के|का)\s+(wife|patni|biwi|pati|husband|beta|beti|bete|son|daughter|father|mother|maa|papa|bahu|पत्नी|पति|बेटा|बेटी|बेटे|पिता|माता|माँ|बहू)(?![\w\u0900-\u097F])")
-RX_DOCTOR = re.compile(r"(?<![\w])(?:Dr|DR|dr|Doctor|Prof)\.?\s*(?=[A-Z\u0900-\u097F])|(?:डॉ|डा|डॉक्टर)\.?\s*")
+RX_DOCTOR = re.compile(r"(?<![\w])(?:Dr|DR|dr|Doctor|Prof)\.?\s*(?=[A-Z\u0900-\u097F])|(?<![\w\u0900-\u097F])(?:डॉक्टर|डॉ|डा)(?![\u0900-\u097F])\.?\s*")
 RX_BY_CUE = re.compile(r"(?i)(?<![\w])(?:called|witnessed|raised|brought|accompanied|informed|signed|reported|requested|visited|escorted|consented|filled|registered|attended|countersigned)\s+by\s*:?\s*(?=[A-Z\u0900-\u097F])")
 RX_ROLE_AFTER = re.compile(r"(?<![\w.])((?:[A-Z][a-z]+ ){1,2}[A-Z][a-z]+)(?=\s*\(\s*(?:attendant|visitor|relative|guardian|caretaker|bystander|wife|husband|son|daughter|mother|father|brother|sister|patient|pt|informant|witness)\b|\s*,?\s*(?:mob(?:ile)?|ph(?:one)?|contact|tel|cell)\.?\s*(?:no\.?)?\s*[:\-]?\s*(?:\+?91[\s-]?)?[6-9]\d)")
 RX_BEFORE_REL = re.compile(r"(?<![\w.])((?:[A-Z][a-z]+ ){0,2}[A-Z][a-z]+),?\s+[SWD]\s?/\s?[oO]\.?\s+(?=[A-Z])")
@@ -262,6 +264,15 @@ class Detector:
         self.dyn = dyn_names if dyn_names is not None else set()   # folded tokens learnt from structured data
         self.scorer = _shared_scorer()
         self.name_finder = NameFinder(lex=self.lex, scorer=self.scorer) if _NF_MODE else None
+        self.strict = 0
+        self.cl_min_p = _CL_MIN_P
+
+    def set_strict(self, level, drop=0.35):
+        """Stigma Shield: 0 = normal, 1 = stricter unseen-name threshold, 2 = strictest (self-check retry)."""
+        self.strict = level
+        self.cl_min_p = _CL_MIN_P - (0.0, 0.1, 0.2)[level]
+        if self.name_finder is not None:
+            self.name_finder.thr_drop = (0.0, drop, 2.5 * drop)[level]
 
     # ---------------------------------------------------------------- token helpers
     def _tok_ok_latin(self, tok, lenient):
@@ -386,9 +397,22 @@ class Detector:
             return (len(w) >= 4 and w.islower() and not lex.is_common(w) and not lex.is_medical(w) and not lex.is_stop(w)
                     and not lex.is_place(w) and fold(w) not in lex.names_f and self.name_score(w) >= p)
 
+        # "<Name> (47/M), <address>": the age/sex bracket right after a line-initial name-shaped phrase
+        for m in _CL_DEMO.finditer(text):
+            toks = list(re.finditer(r"\S+", m.group(1)))
+            good = []
+            for t in toks:
+                w = t.group(0)
+                if has_devanagari(w):
+                    good.append(self._tok_ok_deva(w, True) and not lex.is_place(w))
+                else:
+                    good.append(self.plausible_name_tok(w) and w.lower() not in _ROLE_NOUNS and self.name_score(w) >= 0.15
+                                or (len(toks) > 1 and lex.is_surname_only(w)))
+            if toks and all(good):
+                out.append(Span(m.start(1), m.end(1), "NAME", m.group(1), role="ctx"))
         for m in _CL_EN_LEFT.finditer(text):
             t = _CL_TOK.match(text, m.end())
-            if t and latin_ok(t.group(0), _CL_MIN_P) and not _RX_ORG_NEXT.match(text, t.end()):
+            if t and latin_ok(t.group(0), self.cl_min_p) and not _RX_ORG_NEXT.match(text, t.end()):
                 out.append(Span(t.start(), t.end(), "NAME", t.group(0), role="ctx", meta={"weak": True}))
         for cm in _CL_CLAUSE.finditer(text):
             toks = [(cm.start() + t.start(), cm.start() + t.end(), t.group(0)) for t in _CL_TOK.finditer(cm.group(0))]
@@ -415,9 +439,9 @@ class Detector:
                 post = "gen"
             if post:
                 if has_devanagari(w):
-                    ok = self.plausible_name_tok_deva(w, _CL_MIN_P)
+                    ok = self.plausible_name_tok_deva(w, self.cl_min_p)
                 elif w[:1].isupper():
-                    ok = latin_ok(w, _CL_MIN_P)
+                    ok = latin_ok(w, self.cl_min_p)
                 else:
                     ok = lower_ok(w, 0.3)
                 if ok:
@@ -430,9 +454,9 @@ class Detector:
             if verb and not state and (w.endswith("े") or re.search(r"[^e]e$", w)):
                 continue   # masculine plural nouns ("झटके आए", "jhatke aaye") take the plural verb too
             if has_devanagari(w):
-                ok = self.plausible_name_tok_deva(w, _CL_MIN_P if verb or state else 1.1)
+                ok = self.plausible_name_tok_deva(w, self.cl_min_p if verb or state else 1.1)
             elif w[:1].isupper():
-                ok = latin_ok(w, _CL_MIN_P)
+                ok = latin_ok(w, self.cl_min_p)
             else:
                 ok = (verb or state) and lower_ok(w, 0.6)
             if ok:
@@ -671,8 +695,35 @@ class Detector:
                 prop = NamePropagator(lex=self.lex)
                 prop.register_spans(text, mid)
                 spans.extend(prop.propagate(text, existing_spans=mid, span_cls=Span))
+            spans.extend(self._coordinated_names(text, self.resolve(spans)))
             spans = [sp for sp in spans if not self._weak_negative_context(text, sp)]
         return self.resolve(spans)
+
+    _RX_COORD = re.compile(r"[ \t]*(?:,[ \t]*)?(?:and|aur|और|&)[ \t]+([A-Z][a-z]{2,}|[\u0900-\u097F]{2,})(?![\w\u0900-\u097F])")
+
+    def _coordinated_names(self, text, spans):
+        """`... to <NAME> and Y` / `<NAME> aur Y`: a name-shaped word coordinated with a detected person
+        name is a person too (found by the honey-PII self-check: the second conjunct otherwise depends
+        on how name-like the word happens to look)."""
+        out = []
+        taken = [(s.start, s.end) for s in spans]
+        for s in spans:
+            if s.kind not in ("NAME", "RELATIVE"):
+                continue
+            m = self._RX_COORD.match(text, s.end)
+            if not m:
+                continue
+            w, st, en = m.group(1), m.start(1), m.end(1)
+            if any(a < en and st < b for a, b in taken):
+                continue
+            if has_devanagari(w):
+                ok = self._tok_ok_deva(w, True) and not self.lex.is_place(w) and self.plausible_name_tok_deva(w, 0.15)
+            else:
+                ok = (self.plausible_name_tok(w) and not self.lex.is_surname_only(w) and w.lower() not in _ROLE_NOUNS
+                      and self.name_score(w) >= 0.15 and not _RX_ORG_NEXT.match(text, en))
+            if ok:
+                out.append(Span(st, en, "NAME", w, role="ctx", meta={"weak": True}))
+        return out
 
     # ---------------------------------------------------------------- address parsing
     def parse_address(self, seg, trigger=None):

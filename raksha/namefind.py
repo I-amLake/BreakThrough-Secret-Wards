@@ -817,6 +817,7 @@ class NameFinder:
     """Detects unseen Indian names in English, Hinglish, and Devanagari free text."""
 
     def __init__(self, lex=None, scorer: CharNgramScorer | None = None, weights_path: str | Path | None = None):
+        self.thr_drop = 0.0   # Stigma Shield strict mode lowers every decision threshold
         self.lex = lex
         self.scorer = scorer or CharNgramScorer(weights_path=weights_path)
 
@@ -1194,6 +1195,7 @@ class NameFinder:
                 else:
                     thr = 2.15 if not ends_surname else 1.85
 
+                thr -= self.thr_drop
                 if total >= thr:
                     role = "ctx" if ctx_score >= 1.3 else "morph"
                     meta = {"score": round(total, 3), "cue": ctx_cue, "surname": ends_surname}

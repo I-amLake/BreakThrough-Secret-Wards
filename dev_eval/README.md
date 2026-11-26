@@ -10,6 +10,8 @@ run time that the pipeline opens no answer-key or attacker file).
 | `evaluate.py` | leaks, clinical preservation, linkage, determinism on a synthetic set | the synthetic set's `truth.json` |
 | `attack_eval.py` | approximation of the kit's registry attacker on an output folder | practice answer key + attacker registry (kit) |
 | `validate_output.py` | minimal mirror of the output contract | input + output folders |
+| `improve.py` | `python -m dev_eval.improve`: retrain the name model on fresh synthetic data, promote only if nothing regresses | its own synthetic sets (+ optional kit `check_dev`) |
+| `demo_stigma.sh` | 30-second Stigma Shield before/after on two invented notes in `demo_stigma/` | `demo_stigma/` |
 
 The practice answer key and attacker registry are evaluation material, not runtime input; nothing
 derived from them (names, IDs, places, thresholds) is stored in this repository.

@@ -8,7 +8,7 @@ import sys
 import time
 from collections import defaultdict
 
-from . import core, handlers, ingest
+from . import core, handlers, ingest, stigma
 from .detect import Detector, PII_KINDS
 from .ingest import BinaryFile, EmptyFile, FhirInvalid, GarbledText, UnsafeEntry, Unsupported
 from .linkage import Linker
@@ -62,6 +62,9 @@ class Engine:
         self.n_docs = 0
         self.safe_file_tokens = set()
         self.current_patient_refs = set()
+        self.shield = {"patients_flagged": 0, "records_flagged": 0, "records_hardened": 0, "facility_names_removed": 0,
+                       "selfcheck_files": 0, "selfcheck_planted": 0, "selfcheck_caught": 0,
+                       "files_resanitized_strict": 0, "files_requarantined": 0}
 
     # ------------------------------------------------------------ helpers used by handlers
     def count_ids(self, n, kind="ID"):
@@ -269,6 +272,32 @@ class Engine:
             except Exception as exc:
                 self._quarantine(d, exc)
                 d.units = []
+            else:
+                self._tag_stigma(d)
+
+    def _tag_stigma(self, d):
+        """Stigma Shield: which records mention a stigmatised condition (categories only, in memory)."""
+        if not (self.policy.get("stigma") or {}).get("enabled"):
+            return
+        try:
+            if d.kind == "csv":
+                rows = getattr(d, "rows", None) or []
+                for u in d.units:
+                    ri = int(u.loc.split(":")[1])
+                    u.stigma = stigma.categories(" ".join(str(c) for c in rows[ri])) if ri < len(rows) else ()
+            elif d.kind == "json":
+                for (ptr, node), u in zip(getattr(d, "records", None) or [], d.units):
+                    u.stigma = stigma.categories(json.dumps(node, ensure_ascii=False))
+            elif d.kind == "fhir":
+                cats = stigma.categories(json.dumps(d.obj, ensure_ascii=False))
+                for u in d.units:
+                    u.stigma = cats
+            else:
+                cats = stigma.categories(d.text or "")
+                for u in d.units:
+                    u.stigma = cats
+        except (ValueError, IndexError, TypeError):
+            pass
 
     def learn_names(self, docs):
         """Second chance for names seen once in a cued context: tokens of free-text names tagged as
@@ -352,6 +381,7 @@ class Engine:
                          "sex": sexes[0] if len(sexes) == 1 else None, "district": "|".join(dists) or None,
                          "state": "|".join(states) or None, "pin": pins[0] if len(pins) == 1 else None,
                          "village": next((v for x in mem for v in sorted(x.prof.villages)), None),
+                         "stigma": tuple(sorted({c for x in mem for c in x.stigma})),
                          "dx": set().union(*[x.dx for x in mem]), "los": tuple(sorted(str(x.los) for x in mem if x.los is not None))})
         levels = planner.plan(pats)
         self.risk = planner.risk(pats, levels)
@@ -359,7 +389,10 @@ class Engine:
         for r in pats:
             lvl = levels[r["pkey"]]
             band = band_range(r["amin"], r["amax"], lvl, self.policy)
+            if r["stigma"]:
+                self.shield["patients_flagged"] += 1
             for u in groups[r["pkey"]]:
+                u.stigma_pat = r["stigma"]
                 u.level = lvl
                 u.band = band
                 u.arange = (r["amin"], r["amax"]) if r["amin"] is not None else None
@@ -375,15 +408,25 @@ class Engine:
         for d in docs:
             if d.status != "ok":
                 continue
+            sg = self.policy.get("stigma") or {}
+            stig = bool(sg.get("enabled")) and any(u.stigma_pat for u in d.units)
+            if stig:
+                n = sum(1 for u in d.units if u.stigma_pat)
+                self.shield["records_flagged"] += n
+                self.shield["records_hardened"] += n
+                self.detector.set_strict(1, sg.get("name_threshold_drop", 0.35))
             try:
-                if d.kind == "csv":
+                if d.kind == "text" or d.kind not in ("csv", "json", "fhir"):
+                    body = self._text_shielded(d, stig, sg)
+                elif d.kind == "csv":
                     body = handlers.csv_rewrite(d, self)
                 elif d.kind == "json":
                     body = handlers.json_rewrite(d, self)
                 elif d.kind == "fhir":
                     body = handlers.fhir_rewrite(d, self)
-                else:
-                    body = handlers.text_rewrite(d, self)
+                if stig and d.kind in ("json", "fhir"):
+                    body, nf = stigma.strip_facilities(body)
+                    self.shield["facility_names_removed"] += nf
                 body = self.sweep(body)
                 if d.kind in ("json", "fhir"):
                     json.loads(body)  # must still parse
@@ -393,6 +436,8 @@ class Engine:
             except Exception as exc:
                 self._quarantine(d, exc)
                 d.output = None
+            finally:
+                self.detector.set_strict(0)
         for d in docs:
             if d.status == "sanitized":
                 full = os.path.join(san, d.out_rel)
@@ -400,6 +445,115 @@ class Engine:
                 with open(full, "wb") as fh:
                     fh.write(d.output)
                 d.output = None
+
+    def _text_shielded(self, d, stig, sg):
+        """Free-text rewrite; for a stigmatised patient (or every file with selfcheck: all) the honey-PII
+        self-check must pass, else the file is re-sanitised in the strictest mode, else quarantined."""
+        mode = sg.get("selfcheck", "stigma")
+        check = bool(sg.get("enabled")) and (mode == "all" or (mode == "stigma" and stig))
+        snap = dict(self.entities)
+        body = handlers.text_rewrite(d, self)
+        if stig:
+            body, nf = stigma.strip_facilities(body)
+            self.shield["facility_names_removed"] += nf
+        if not check:
+            return body
+        self.shield["selfcheck_files"] += 1
+        if self._selfcheck(d, stig):
+            return body
+        self.shield["files_resanitized_strict"] += 1
+        self.entities.clear()
+        self.entities.update(snap)
+        self.detector.set_strict(2, sg.get("name_threshold_drop", 0.35))
+        body = handlers.text_rewrite(d, self)
+        body, _ = stigma.strip_facilities(body)
+        mode_fail = sg.get("selfcheck_on_fail", "auto")
+        if self._selfcheck(d, True, count=False) or mode_fail == "keep_strict":
+            return body
+        st = self._last_check
+        # auto: a surviving number (Aadhaar/phone/ID: a format hole) or most planted names surviving
+        # (the detector is blind in this file) -> quarantine; a few context-dependent names -> strict output
+        if mode_fail == "auto" and not st["num"] and st["name"] * 2 <= st["names"]:
+            return body
+        self.entities.clear()
+        self.entities.update(snap)
+        self.shield["files_requarantined"] += 1
+        raise ValueError("selfcheck failed")
+
+    def _selfcheck(self, d, stig, count=True):
+        """Honey-PII self-check (in memory only). Every identifier detected in the file is replaced by an
+        invented one of the same shape (keyed by HMAC(secret, file hash)); the shadow file goes through the
+        same detect + render path; True when no planted value survives. Nothing is logged or written."""
+        det = self.detector
+        u = d.units[0]
+        text = d.text or ""
+        ctx = self.unit_ctx(d, u)
+        order, year = self.doc_order(d), self.doc_year(d)
+        spans = sorted((s for s in det.detect(text, None, order, year) if s.kind in stigma.HONEY_KINDS),
+                       key=lambda s: s.start)
+        honey = stigma.Honey(hashlib.sha256(self.keys.token("honey", d.sha, 32).encode()).digest(), d.sha)
+        lex = det.lex
+
+        def score(w):
+            if lex.is_common(w) or lex.is_medical(w) or lex.is_place(w) or fold(devanagari_to_latin(w) if has_devanagari(w) else w.lower()) in det.dyn:
+                return -1.0
+            if det.name_finder is not None:
+                return det.name_finder.score_token(w)[0] + det.name_score(w)
+            return det.name_score(w)
+        parts, planted, added, pos = [], [], [], 0
+        for s in spans:
+            if s.start < pos:
+                continue
+            orig = text[s.start:s.end]
+            if s.kind == "NAME":
+                fake = honey.name_like(orig, score)
+                for o, f in zip(orig.split(), fake.split()):
+                    fo = fold(devanagari_to_latin(o) if has_devanagari(o) else o.lower())
+                    ff = fold(devanagari_to_latin(f) if has_devanagari(f) else f.lower())
+                    if fo in det.dyn and ff not in det.dyn:
+                        det.dyn.add(ff)
+                        added.append(ff)
+                    if len(f) >= 3:
+                        planted.append(("NAME", f))
+            elif sum(c.isdigit() for c in orig) >= 6:
+                fake = honey.digits_like(orig, s.kind)
+                planted.append(("NUM", fake))
+            else:
+                continue
+            parts.append(text[pos:s.start])
+            parts.append(fake)
+            pos = s.end
+        self._last_check = {"num": 0, "name": 0, "names": 0}
+        if not planted:
+            for f in added:
+                det.dyn.discard(f)
+            return True
+        parts.append(text[pos:])
+        shadow = "".join(parts)
+        try:
+            spans2 = det.detect(shadow, None, order, year)
+            out, _, _ = core.render(shadow, spans2, self.unit_ctx(d, u))
+            out, _ = core.b64_tokens_sub(out, ctx)
+            if stig:
+                out, _ = stigma.strip_facilities(out)
+        finally:
+            for f in added:
+                det.dyn.discard(f)
+        low = out.lower()
+        survived = 0
+        for kind, v in planted:
+            if kind == "NAME":
+                hit = re.search(r"(?<![\w\u0900-\u097F])" + re.escape(v.lower()) + r"(?![\w\u0900-\u097F])", low)
+            else:
+                hit = v in out
+            survived += bool(hit)
+            if hit:
+                self._last_check["num" if kind == "NUM" else "name"] += 1
+        self._last_check["names"] = sum(1 for k, _ in planted if k == "NAME")
+        if count:
+            self.shield["selfcheck_planted"] += len(planted)
+            self.shield["selfcheck_caught"] += len(planted) - survived
+        return survived == 0
 
     def out_path(self, d, used):
         parts = d.rel.split("/")
@@ -565,6 +719,7 @@ class Engine:
             "entities": dict(sorted((k, int(v)) for k, v in self.entities.items())),
             "privacy": self.risk,
             "linkage": self.link_stats,
+            "stigma_shield": dict(self.shield),
             "timing": {"seconds": round(time.time() - t0, 2)},
             "resources": {"peak_rss_mb": peak_rss_mb()},
         }

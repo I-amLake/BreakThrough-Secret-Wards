@@ -124,6 +124,11 @@ class Planner:
             if any(d in self.rare_dx for d in r.get("dx", ())):
                 level[r["pkey"]] = max(level[r["pkey"]], min(self.p["rare_dx_min_level"], maxlvl))
 
+        sg = self.p.get("stigma") or {}
+        if sg.get("enabled"):
+            for r in pats:
+                if r.get("stigma"):
+                    level[r["pkey"]] = max(level[r["pkey"]], min(int(sg.get("min_level", 1)), maxlvl))
         demo = lambda r: self.qi(r, level[r["pkey"]])
         for _ in range(maxlvl + 1):
             c = self.class_sizes(pats, demo)
@@ -141,7 +146,10 @@ class Planner:
             mode = self.p.get("rare_dx_suppress", "unique_with_facts")
             has_rare = any(d in self.rare_dx for d in r.get("dx", ()))
             rare = has_rare and ((mode == "unique_with_facts" and cf[r["pkey"]] < self.k) or (mode == "small_class" and small))
-            if (small and self.p.get("suppress_below_k")) or rare:
+            sk = sg.get("state_if_below_k", True)
+            stig = small and r.get("stigma") and sg.get("enabled") and \
+                (sk is True or (isinstance(sk, (list, tuple)) and any(c in sk for c in r["stigma"])))
+            if (small and self.p.get("suppress_below_k")) or rare or stig:
                 self.suppressed.add(r["pkey"])
                 level[r["pkey"]] = self.max_level
         return level

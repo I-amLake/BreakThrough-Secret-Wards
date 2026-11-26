@@ -28,6 +28,19 @@ linkage:
   weak_threshold: 3.0
   weak_same_hospital: true
   weak_attach_unique: false     # first-name-only fragments link only through a relative/ID/phone clue
+stigma_shield:                # patients whose record mentions HIV, TB, mental illness/suicide attempt, MTP,
+                              # sexual assault/POCSO, leprosy, substance use or sex determination
+  enabled: true
+  min_level: 1                # at least 20-year age bands
+  state_if_below_k: [HIV, MENTAL, MTP, ASSAULT, SEXDET]
+                              # conditions with a statutory confidentiality duty: still in a class < k at
+                              # max_level -> state only (40-year band). TB and leprosy are notifiable and keep
+                              # the district (public-health utility); they get every other protection
+  name_threshold_drop: 0.35   # stricter unseen-name detection in their files
+  selfcheck: stigma           # honey-PII self-check on their free-text files: stigma | all | off
+  selfcheck_on_fail: auto     # planted values survive even the strictest re-run. auto: quarantine if a planted
+                              # number survives or most planted names do, else keep the strict output;
+                              # quarantine | keep_strict force one behaviour
 replacements:
   relative: "[RELATIVE]"
   other_name: "[NAME]"

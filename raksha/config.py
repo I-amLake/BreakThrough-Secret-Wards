@@ -12,6 +12,8 @@ DEFAULTS = {
                     "rare_diagnosis_suppress": "unique_with_facts"},
     "linkage": {"age_veto_years": 3, "phone_degree_cap": 6, "max_block": 300, "weak_threshold": 3.0,
                 "weak_same_hospital": True, "weak_attach_unique": False},
+    "stigma_shield": {"enabled": True, "min_level": 1, "state_if_below_k": ["HIV", "MENTAL", "MTP", "ASSAULT", "SEXDET"], "name_threshold_drop": 0.35,
+                      "selfcheck": "stigma", "selfcheck_on_fail": "auto"},
     "replacements": {"relative": "[RELATIVE]", "other_name": "[NAME]", "unlinked_patient": "[PATIENT]"},
 }
 
@@ -97,5 +99,6 @@ def load_policy(repo_root):
         "pin3_level": pol["location"]["keep_pin3_at_level"],
         "district_level": pol["location"]["keep_district_up_to_level"],
         "repl": pol["replacements"],
+        "stigma": dict(pol.get("stigma_shield") or {}),
     })
     return flat
