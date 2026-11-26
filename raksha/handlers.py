@@ -1457,6 +1457,9 @@ def text_rewrite(doc, eng):
     for s in spans:
         if s.kind == "NAME" and (s.start, s.end) in keymap and keymap[(s.start, s.end)] is not None:
             s.meta["is_patient"] = keymap[(s.start, s.end)]
+    extra = core.local_name_spans(doc.text, ctx, spans)
+    if extra:
+        spans = sorted(spans + extra, key=lambda sp: (sp.start, sp.end))
     new, n, ents = render(doc.text, spans, ctx)
     new, nb = core.b64_tokens_sub(new, ctx)
     eng.add_entities(ents, n + nb)

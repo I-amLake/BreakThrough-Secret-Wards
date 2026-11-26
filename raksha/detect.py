@@ -211,7 +211,7 @@ RX_SEX = re.compile(r"(?<![\w\u0900-\u097F])((?i:male|female|man|woman|boy|girl|
                     r"|(?<![\d.])\d{1,3}\s?(?:(?i:y|yr|yrs|years?|वर्ष|साल)\.?)?\s?/\s?([MFmf])\b|(?<![\d.])\d{1,3}\s?([MF])\b(?![\d.])"
                     r"|\b([MF])\s?/\s?\d|(?i:sex|gender|ling|लिंग)\s*[:\-]?\s*([MF])\b")
 
-_AMBIG_CTX = re.compile(r"\s+(?:ji|jee|devi|bai|ben|kumari)\b|\s*,?\s*[SWDCH]\s?/\s?[oO]\b|\s+[A-Z][a-z]+\s*,\s*[SWDCH]/[oO]\b|\s*\(\s*\d{1,3}\s*(?:y|yrs?|years?)?\s*/?\s*[MF]\b")
+_AMBIG_CTX = re.compile(r"\s+(?:ji|jee|devi|bai|ben|kumari|babu|babuji|sahab|sahib|saheb|dada|didi|bhaiya|bhai)\b|\s*,?\s*[SWDCH]\s?/\s?[oO]\b|\s+[A-Z][a-z]+\s*,\s*[SWDCH]/[oO]\b|\s*\(\s*\d{1,3}\s*(?:y|yrs?|years?)?\s*/?\s*[MF]\b")
 _SENT_LAT = re.compile(r"[A-Za-z]+(?:'(?![sS]\b)[A-Za-z]+)*\.?|[\u0900-\u0963\u0970-\u097F]+\.?")
 
 # relation marker -> (canonical role of the RELATIVE, sex hint for the PATIENT)
@@ -673,7 +673,12 @@ class Detector:
             if re.fullmatch(r"[A-Za-z]\.?", w) and text[e:e + 1] in ("/", "\\"):
                 break
             if not self.tok_ok(w, lenient):
-                break
+                # Allow a TitleCase word (e.g., "Grace" in "Grace D'Souza") if immediately followed by a valid name token
+                if w[:1].isupper() and not w.isupper() and not self.lex.is_medical(w.lower()) \
+                        and idx + 1 < len(toks) and self._joinable(text, toks[idx], toks[idx + 1]) and self.tok_ok(toks[idx + 1][2], lenient):
+                    pass
+                else:
+                    break
             if w.endswith(".") and len(w.rstrip(".")) > 1 and not re.fullmatch(r"(?:[A-Z]\.)+", w):
                 e -= 1
                 start = s if start is None else start
@@ -1256,12 +1261,16 @@ class Detector:
             return None
         start = end = None
         n = 0
-        for s, e, w in toks:
+        for i_lv, (s, e, w) in enumerate(toks):
             w2 = w.rstrip(".")
             if w2.lower() in self.lex.honor_pre:
                 continue
-            if w2.lower() in ("s/o", "d/o", "w/o") or self.lex.is_stop(w2) and w2.lower() not in self.lex.names:
+            if w2.lower() in ("s/o", "d/o", "w/o"):
                 break
+            if self.lex.is_stop(w2) and w2.lower() not in self.lex.names:
+                if not (w2[:1].isupper() and not w2.isupper() and i_lv + 1 < len(toks)
+                        and self.tok_ok(toks[i_lv + 1][2], True) and not self.lex.is_stop(toks[i_lv + 1][2])):
+                    break
             if self.lex.is_medical(w2) and w2.lower() not in self.lex.names and w2.lower() not in self.lex.ambiguous:
                 break
             if start is not None and re.search(r"[,;(/]", text[vs + end:vs + s]):
@@ -1386,7 +1395,8 @@ class Detector:
             wl = w.lower().rstrip(".")
             if (wl in lex.honor_suf or w in lex.honor_suf) and i > 0:
                 prev = toks[i - 1][2]
-                if prev.lower() in ("dr", "doctor", "sister", "nurse", "madam", "sir", "mata", "pita", "guru", "baba") or lex.is_medical(prev):
+                if prev.lower() in ("dr", "doctor", "sister", "nurse", "madam", "sir", "mata", "pita", "guru", "baba") \
+                        or (lex.is_medical(prev) and not (prev.lower() in lex.ambiguous and prev[:1].isupper() and not prev.isupper())):
                     continue
                 b = self._collect_backward(text, toks, s, 2)
                 if b is None:

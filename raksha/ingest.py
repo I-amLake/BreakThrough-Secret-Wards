@@ -119,11 +119,15 @@ def decode(data):
 # ("Imr<ZWSP>an", "94673<ZWSP>24498"), so they are removed before ANY detection, in every format.
 _RX_INVISIBLE = re.compile("[\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180e\u200b-\u200f\u202a-\u202e"
                            "\u2060-\u2064\u2066-\u206f\ufeff\ufe00-\ufe0f]")
+_FULLWIDTH = str.maketrans({**{chr(i): chr(i - 0xfee0) for i in range(0xff01, 0xff5f)}, "\u3000": " "})
+_RX_FULLWIDTH = re.compile("[\u3000\uff01-\uff5e]")
 
 
 def strip_invisible(text):
     if _RX_INVISIBLE.search(text):
         text = _RX_INVISIBLE.sub("", text)
+    if _RX_FULLWIDTH.search(text):
+        text = text.translate(_FULLWIDTH)
     if _RX_NONLATIN_LOOKALIKE.search(text):
         text = _RX_MIXED_WORD.sub(_fold_mixed, text)
     return unhide(text)

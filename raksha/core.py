@@ -404,7 +404,8 @@ def local_name_spans(text, ctx, spans):
         w = m.group(0)
         if any(a < m.end() and m.start() < b for a, b in taken):
             continue
-        if not has_devanagari(w) and (lex.is_stop(w) or (lex.is_medical(w.lower()) and w.lower() not in lex.ambiguous)):
+        if not has_devanagari(w) and ((lex.is_stop(w) and not (w[:1].isupper() and not w.isupper()))
+                                      or (lex.is_medical(w.lower()) and w.lower() not in lex.ambiguous)):
             continue
         k = name_keys(w)
         if k and all(x in keys for x in k) and len(k[0]) >= 3:
