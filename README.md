@@ -21,7 +21,7 @@ pseudonym (`PSN-XXXXXX`), quasi-identifiers generalised, and all clinical conten
    vetoed (practice set: precision 1.00, recall 1.00, 0 wrong merges).
 4. **Patient-level privacy.** One keyed date shift and one age band per patient (intervals such as a
    9-day stay stay exact), a k-anonymity planner over the quasi-identifiers that are actually
-   released, rare-diagnosis escalation and suppression, with measured attacker numbers in `report.json`.
+   released, rare-diagnosis escalation to the coarsest level, with measured attacker numbers in `report.json`.
 5. **Assume breach.** Stdlib only, offline, deterministic, in-memory, PII-free logs and errors,
    secret read once from `RAKSHA_SECRET` and dropped from the environment, broken files quarantined.
 
@@ -35,6 +35,18 @@ pseudonym (`PSN-XXXXXX`), quasi-identifiers generalised, and all clinical conten
   synthetic hold-out P 0.96 / R 0.98). No LLMs, no generative models, no pretrained transformers, no
   spaCy/NER models. Everything else is rules, small hand-written gazetteers, transliteration,
   phonetic/fuzzy matching and deterministic algorithms. Nothing is downloaded at run time; no network calls.
+* **Provenance of the word and name lists.** Every list is hand-written general knowledge, public
+  administrative data or generic morphology; none is extracted from the kit, the practice set, its
+  answer key or `acceptance.py`, and the test suites use invented names only.
+  `raksha/data/first_names.txt` and `surnames.txt`: common Indian given names and census-level family
+  names, typed by hand as a general gazetteer (the pipeline also works without them; see the
+  no-gazetteer run). `places.txt`: public lists of the 75 Uttar Pradesh districts, Indian states and
+  large cities, used only as a guard so a place is never read as a person. `drugs.txt`,
+  `medical_terms.txt`: common generic/brand drug names and clinical vocabulary (keep-lists, never
+  redacted as names). `stop_latin.txt`, `stop_hindi.txt`, `common_words.txt`, `honorifics.txt`,
+  `honorific_suffixes.txt`: English/Hinglish/Hindi function words, admin words, titles and kinship
+  terms. In `raksha/namefind.py`: generic stoplists, pan-Indian surnames and short name onsets/endings
+  (morphology, not whole given names). The classifier weights come from synthetic tokens only (above).
 * Python 3.10+ standard library only: **no third-party packages at all**, so the output is
   byte-identical whether or not anything is pip-installed (verified on 3.10 and 3.13, with and without
   PyYAML/RapidFuzz/charset-normalizer present). CPU only, offline, deterministic. Practice set (200 files):
@@ -223,14 +235,16 @@ counts as 0.7; `village_to: tehsil` keeps the record's tehsil instead). House/lo
 removed. Patients in classes below k on the QIs actually released (band, sex, district; a QI that is
 not released matches everyone), and patients with a diagnosis seen in fewer than k patients, move to
 level 1 (20-year bands). A rare-diagnosis patient still unique on demographics + diagnosis + stay
-length is suppressed as a whole cluster: 40-year band and state only. Invalid ages (negative, > 120)
+length is generalised to the top level as a whole cluster: 40-year band and state only. Such
+records stay in the output and are labelled `generalized` in `records.jsonl` (no record is ever
+dropped, so `records_suppressed` is 0). Invalid ages (negative, > 120)
 become `[AGE]`, never a made-up band. Clinical content is never removed. `report.json` carries
 patient-level risk before/after (average, maximum, share below k).
 
 **Trade-off (practice set, `scripts/attack_eval.py`, A2 = mean record risk, A4 = share of patients
 re-identified at ≥ 0.5 after pooling by pseudonym; raw QI-only attack: A2 0.20, A4 0.73).**
 
-| policy | A2 | A4 | age utility | district utility | medical kept | records suppressed |
+| policy | A2 | A4 | age utility | district utility | medical kept | records at top level (40-y band + state, still exported) |
 |---|---:|---:|---:|---:|---:|---:|
 | v1 (row-level levels) | 0.060 | 0.21 | 0.57 | 0.69 | 4855 | 78 |
 | no suppression | 0.064 | 0.21 | 0.58 | 0.69 | 4855 | 0 |

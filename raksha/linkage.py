@@ -12,6 +12,7 @@
   the same hospital; otherwise they get patient = null.
 """
 import functools
+from array import array
 import math
 from collections import defaultdict
 
@@ -86,7 +87,7 @@ class Profile:
         self.weak = not (full or strong or (toks and (self.rels or self.byears)))
 
 
-@functools.lru_cache(maxsize=500000)
+@functools.lru_cache(maxsize=65536)
 def _tok_sim(a, b):
     if a == b:
         return 1.0
@@ -276,7 +277,8 @@ class Linker:
         byid = {p.rid: p for p in profs}
         blocks = self._blocks(profs)
         cap = self.p["max_block"]
-        pairs = set()
+        N = len(profs) + 1
+        pairs = set()   # pair keys a * N + b (ints, not tuples: memory)
         for key in sorted(blocks, key=lambda k: tuple(str(x) for x in k)):
             ids = sorted(set(blocks[key]))
             if len(ids) > cap:
@@ -285,17 +287,29 @@ class Linker:
                 ids = ids[:cap]
             for i in range(len(ids)):
                 for j in range(i + 1, len(ids)):
-                    pairs.add((ids[i], ids[j]))
-        cache = {}
-        edges = []
-        thr = self.p["link_threshold"]
-        for a, b in sorted(pairs):
-            pa, pb = byid[a], byid[b]
-            sc, veto, ok = self.score(pa, pb)
-            cache[(a, b)] = (sc, veto)
-            if not veto and ok:
-                edges.append((-sc, a, b))
-        edges.sort()
+                    pairs.add(ids[i] * N + ids[j])
+        # only the veto bit of a scored pair is needed later (cluster merges check vetoes)
+        # Scores are sums of a few fixed weights, so few distinct values: bucket the edge keys by
+        # score in compact int arrays (keys arrive ascending = (a, b) order). Iterating buckets by
+        # descending score gives exactly the order of sorting (-score, a, b) tuples, in ~8 B/edge.
+        scored, vetoed = pairs, set()
+        buckets = defaultdict(lambda: array("q"))
+        n_edges = 0
+        for key in sorted(pairs):
+            a, b = divmod(key, N)
+            sc, veto, ok = self.score(byid[a], byid[b])
+            if veto:
+                vetoed.add(key)
+            elif ok:
+                buckets[sc].append(key)
+                n_edges += 1
+        n_pairs = len(pairs)
+
+        def edges():
+            for sc in sorted(buckets, reverse=True):
+                for key in buckets[sc]:
+                    a, b = divmod(key, N)
+                    yield -sc, a, b
         parent = {p.rid: p.rid for p in profs}
         members = {p.rid: [p.rid] for p in profs}
 
@@ -305,26 +319,26 @@ class Linker:
                 x = parent[x]
             return x
 
-        def pair(a, b):
-            k = (a, b) if a < b else (b, a)
-            if k not in cache:
-                cache[k] = self.score(byid[k[0]], byid[k[1]])[:2]
-            return cache[k]
+        def vetoed_pair(a, b):
+            a, b = (a, b) if a < b else (b, a)
+            k = a * N + b
+            if k not in scored:
+                scored.add(k)
+                if self.score(byid[a], byid[b])[1]:
+                    vetoed.add(k)
+            return k in vetoed
 
         cl_thr = self.p["cluster_threshold"]
-        for negsc, a, b in edges:
+        for negsc, a, b in edges():
             ra, rb = find(a), find(b)
             if ra == rb:
                 continue
-            tot, cnt, ok = 0.0, 0, True
+            ok = True
             for x in members[ra]:
                 for y in members[rb]:
-                    sc, veto = pair(x, y)
-                    if veto:
+                    if vetoed_pair(x, y):
                         ok = False
                         break
-                    tot += sc
-                    cnt += 1
                 if not ok:
                     break
             if not ok:
@@ -379,5 +393,5 @@ class Linker:
                 if okc and (lk or (self.p["weak_attach_unique"] and tot >= self.p["weak_threshold"])):
                     good.append(r)
             assign[p.rid] = good[0] if len(good) == 1 else None
-        self.stats = {"edges": len(edges), "pairs": len(pairs)}
+        self.stats = {"edges": n_edges, "pairs": n_pairs}
         return [assign[p.rid] for p in profs], members

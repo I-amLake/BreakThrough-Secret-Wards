@@ -22,8 +22,7 @@ GENERIC_TOKENS = {"kumar", "devi", "ji", "md", "mohd", "mohammad", "bai", "begum
 class Doc:
     def __init__(self, rel, data):
         self.rel = rel
-        self.data = data
-        self.sha = sha256_bytes(data)
+        self.sha = sha256_bytes(data)  # raw bytes are not kept (memory); text/obj carry the content
         self.kind = None
         self.text = None
         self.obj = None
@@ -117,8 +116,7 @@ class Engine:
         docs = []
         for rel in ingest.walk(root):
             try:
-                with open(os.path.join(root, rel), "rb") as fh:
-                    data = fh.read()
+                data = ingest.read_nofollow(os.path.join(root, rel))
             except OSError:
                 data = b""
             d = Doc(rel, data)
@@ -482,9 +480,10 @@ class Engine:
                 rec = {"file": "sanitized/" + d.out_rel, "loc": u.loc, "patient": u.psn}
                 if u.out and u.out != u.loc:
                     rec["out"] = u.out
-                if u.rid in self.suppressed:
-                    rec["status"] = "suppressed"
-                elif self._generalized(u):
+                # k-anonymity escalation coarsens a record's quasi-identifiers to the top level but
+                # the record itself is still exported and locatable: that is "generalized", not
+                # "suppressed" (which would mean the record was removed)
+                if u.rid in self.suppressed or self._generalized(u):
                     rec["status"] = "generalized"
                 lines.append(json.dumps(rec, ensure_ascii=False))
         with open(os.path.join(out_root, "records.jsonl"), "w", encoding="utf-8") as fh:
@@ -518,8 +517,8 @@ class Engine:
                 "records_processed": n_records,
                 "identifiers_detected": int(self.ids_detected),
                 "records_linked": sum(1 for u in exported if u.psn),
-                "records_generalized": sum(1 for u in exported if u.rid not in self.suppressed and self._generalized(u)),
-                "records_suppressed": sum(1 for u in exported if u.rid in self.suppressed),
+                "records_generalized": sum(1 for u in exported if u.rid in self.suppressed or self._generalized(u)),
+                "records_suppressed": 0,  # no record is ever dropped; rare QIs are coarsened instead
                 "records_quarantined": sum(len(d.units) for d in docs if d.status != "sanitized"),
             },
             "entities": dict(sorted((k, int(v)) for k, v in self.entities.items())),
@@ -548,6 +547,18 @@ def run(input_dir, output_dir, policy, keyring, log):
     log.event("linked", clusters=eng.link_stats["clusters"], linked=eng.link_stats["linked_records"])
     eng.build_sweep()
     eng.rewrite(docs, output_dir)
+    # re-hash every input: a file that changed while we ran is reported (count only, no names)
+    changed = 0
+    for d in docs:
+        try:
+            now = sha256_bytes(ingest.read_nofollow(os.path.join(input_dir, d.rel)))
+        except OSError:
+            now = None
+        if d.sha != now and not (now is None and d.status == "quarantined"):
+            changed += 1
+    eng.inputs_changed = changed
+    if changed:
+        sys.stderr.write("raksha: warning: %d input file(s) changed during the run\n" % changed)
     n = eng.write_records(docs, output_dir)
     rep = eng.write_report(docs, output_dir, t0, n)
     log.event("done", sanitized=rep["counts"]["files_sanitized"], quarantined=rep["counts"]["files_quarantined"],

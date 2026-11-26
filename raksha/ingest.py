@@ -47,6 +47,26 @@ def walk(root):
     return sorted(out)
 
 
+def read_nofollow(path):
+    """Read a file without following a symlink planted at the last path component
+    (closes the gap between walk() skipping links and the open)."""
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
+    fd = os.open(path, flags)
+    try:
+        import stat
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise OSError("not a regular file")
+        chunks = []
+        while True:
+            b = os.read(fd, 1 << 20)
+            if not b:
+                break
+            chunks.append(b)
+        return b"".join(chunks)
+    finally:
+        os.close(fd)
+
+
 def decode(data):
     """Decode bytes to str. Raises GarbledText / BinaryFile."""
     if not data:

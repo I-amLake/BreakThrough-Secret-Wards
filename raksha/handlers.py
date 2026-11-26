@@ -879,8 +879,22 @@ def _attachment(data, ctype, ctx, eng):
         eng.count_ids(1)
         return base64.b64encode(b"[binary attachment removed]").decode()
     new, n, _ = render_value(txt, ctx)
-    eng.count_ids(n)
+    new, k = _RX_OPAQUE_ID.subn(lambda m: m.group(0) if _clinical_token(m.group(0), eng) else "[ID]", new)
+    eng.count_ids(n + k)
     return base64.b64encode(new.encode("utf-8")).decode()
+
+
+# an attachment is opaque to the reader: long letter+digit tokens in it are treated as identifiers
+_RX_OPAQUE_ID = re.compile(r"(?<![A-Za-z0-9\[])(?=[A-Za-z0-9\-]*\d[A-Za-z0-9\-]*\d[A-Za-z0-9\-]*\d)(?=[A-Za-z0-9\-]*[A-Za-z][A-Za-z0-9\-]*[A-Za-z])"
+                           r"[A-Za-z0-9][A-Za-z0-9\-]{7,}(?![A-Za-z0-9\]])")
+
+
+def _clinical_token(tok, eng):
+    """Keep clinical codes that look alphanumeric: ICD-10 (`E11.9` is short anyway), `COVID-19`, `SARS-CoV-2`, units."""
+    lex = eng.detector.lex
+    if lex.is_medical(tok) or re.fullmatch(r"[A-Za-z]+(?:-[A-Za-z]+)*-\d{1,3}", tok) or re.fullmatch(r"PSN-[0-9A-Z]{6}", tok):
+        return True
+    return False
 
 
 # ===================================================================== text notes

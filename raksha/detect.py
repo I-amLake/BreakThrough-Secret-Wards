@@ -82,7 +82,7 @@ _RX_VILL_WORD = re.compile(r"(?i)" + _VILL)
 _RX_VILL_END = re.compile(r"(?i)\s*(?:[,\n;|(]|-\s|\s(?:tehsil|teh\.?|tahsil|post|p\.\s?o\.?|distt?\.?|district|thana|block|near|pin|तहसील|पोस्ट|जिला|जनपद|ब्लॉक|थाना|के\s+पास))")
 RX_VILLAGE = re.compile(r"(?i)(?<![\w\u0900-\u097F])" + _VILL + r"\.?\s*[:\-]?\s*([A-Za-z\u0900-\u097F][A-Za-z\u0900-\u097F ]{1,40}?)(?=\s*(?:[,\n;|(]|$|\s(?:tehsil|teh\.?|tahsil|post|distt?\.?|district|thana|block|pin|तहसील|पोस्ट|जिला|जनपद|ब्लॉक|थाना)))")
 RX_ADDR = re.compile(r"(?i)(?<![\w\u0900-\u097F])(" + _ADDR_TRIG + r")(?:\s*\([^)\n]{1,25}\))?[ \t]*[:\-–]?[ \t]*")
-RX_ADDR_STOP = re.compile(r"(?i)[\n|;]|\s(?:mob(?:ile)?|ph(?:one)?|contact|tel|age|sex|gender|aadhaa?r|uhid|mrn|dob|diagnosis|dx|c/o|complaint|उम्र|मोबाइल|फोन|आधार)(?![\w\u0900-\u097F])|(?<=[A-Za-z0-9\u0900-\u097F])\.\s+(?=[A-Z][a-z]+\s+[a-z])|।")
+RX_ADDR_STOP = re.compile(r"(?i)[\n|;]|\s(?:mob(?:ile)?|ph(?:one)?|contact|tel|age|sex|gender|aadhaa?r|uhid|mrn|dob|diagnosis|dx|c/o|complaint|उम्र|मोबाइल|फोन|आधार)(?![\w\u0900-\u097F])|(?<=[A-Za-z0-9\u0900-\u097F])\.\s+(?=[A-Z][a-z]+\s+[a-z])|(?<=[A-Za-z0-9\u0900-\u097F])\.\s+(?=[A-Z][A-Za-z/ ]{0,20}\s?:)|।")
 _ADDR_ABBR = {"vill", "distt", "dist", "teh", "h.no", "no", "p.o", "po", "ps", "near", "opp", "st", "rd", "gram", "mohalla", "sec", "nr"}
 RX_DISTRICT = re.compile(r"(?i)(?:distt?\.?|district|zila|zilla|जिला|जनपद)\s*[:\-]?\s*([A-Za-z\u0900-\u0963\u0970-\u097F]+(?:\s(?!pin|state|up\b)[A-Za-z\u0900-\u0963\u0970-\u097F]+)?)")
 STATES = ["andhra pradesh", "arunachal pradesh", "assam", "bihar", "chhattisgarh", "goa", "gujarat", "haryana",

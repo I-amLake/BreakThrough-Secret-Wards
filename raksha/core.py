@@ -111,7 +111,7 @@ def name_keys(name):
 
 
 def rel_from_value(value, header_rel=("G", None)):
-    """'S/O SHYAM PATEL' -> (('P','M'), 'SHYAM PATEL')."""
+    """'S/O TEVAN ORLIKAR' -> (('P','M'), 'TEVAN ORLIKAR')."""
     from .detect import REL_LETTER, REL_WORD
     v = str(value).strip()
     m = re.match(r"^\s*([SDWHFMCB])\s?[/.\\]\s?[oO]\.?\s*[:\-]?\s*(.*)$", v)

@@ -165,5 +165,5 @@ class Planner:
         facts = metrics(lambda r: self.qi(r, level[r["pkey"]]) + (tuple(sorted(r.get("dx", ()))), r.get("los")))
         return {"k": self.k, "unit": "patient", "patients": len(pats), "patients_with_qi": len(scored), "before_generalization": base,
                 "after_demographic_qi": demo, "after_with_diagnosis_and_los": facts,
-                "rare_diagnoses": len(self.rare_dx), "suppressed_patients": len(self.suppressed),
+                "rare_diagnoses": len(self.rare_dx), "max_generalized_patients": len(self.suppressed),
                 "levels": dict(sorted(Counter(level.values()).items()))}
