@@ -27,7 +27,8 @@ PII_KINDS = {"CANARY", "EMAIL", "ABHA", "AADHAAR", "PAN", "PHONE", "MRN", "INSUR
 # medical eponyms that are also ordinary family names ("Bell's palsy" vs "Durga Bell")
 _EPONYM_SURNAMES = {"bell", "wilson", "graves", "murphy", "parkinson", "addison", "cushing", "hodgkin", "crohn", "ringer",
                     "foley", "huntington", "hashimoto", "kernig", "romberg", "virchow", "lachman", "phalen", "tinel",
-                    "down", "paget", "raynaud", "horner", "bartter", "conn", "barrett", "baker", "colles", "pott", "still"}
+                    "down", "paget", "raynaud", "horner", "bartter", "conn", "barrett", "baker", "colles", "pott", "still",
+                    "koch", "hansen"}
 
 
 _MONTHS = {"january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november",
@@ -61,10 +62,11 @@ RX_BARE_SPOKEN_PHONE = re.compile(r"(?i)(?<![\w\u0900-\u097F])(" + _PHONE_WORD +
 RX_SPACED_PHONE = re.compile(r"(?<![\d\w])[6-9](?:[ \t]\d){9}(?![\d\w])")
 RX_DOTTED_PHONE = re.compile(r"(?<![\d\w])(?:(?:\+|00)?91[.-]|0)?[6-9]\d{2,3}[\.-]\d{3}[\.-]\d{3,4}(?![\d\w])")
 SHIELD_RX = [
-    re.compile(r"(?i)\b(?:parkinson|huntington|hodgkin|crohn|addison|cushing|graves|hashimoto|wilson|bell)(?:'s)?\s+(?:disease|syndrome|chorea|lymphoma|palsy|phenomenon|sign|goitre|thyroiditis)\b"),
+    re.compile(r"(?i)\b(?:parkinson|huntington|hodgkin|crohn|addison|cushing|graves|hashimoto|wilson|bell|koch|hansen|pott|ringer)(?:'s)?\s+(?:disease|syndrome|chorea|lymphoma|palsy|phenomenon|sign|goitre|thyroiditis|bacillus|ulcer|fracture|lactate|\(tb\))"),
+    re.compile(r"(?i)\b(?:foley\s+catheter|ryles\s+tube|apgar\s+score|glasgow\s+coma\s+scale)\b"),
     re.compile(r"(?i)(?<![0-9a-f-])[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?![0-9a-f-])"),   # UUIDs (FHIR ids)
-    # organisation names: "Navodaya Charitable Hospital", "Seva Sadan", "City Labs"
-    re.compile(r"(?:\b[A-Z][A-Za-z.&'-]+[ \t]+){1,4}(?:(?i:Hospitals?|Sadan|Clinic|Nursing Home|Medical College|Labs?|Laboratory|Diagnostics|Trust|Charitable|Foundation|Pharmacy|Chikitsalaya|Aushadhalaya)|CHC|PHC)\b"),
+    # organisation names: "Navodaya Charitable Hospital", "Seva Sadan", "City Labs", "Indira Gandhi Memorial Medical Centre"
+    re.compile(r"(?:\b(?:Dr\.?[ \t]+)?[A-Z][A-Za-z.&'-]+[ \t]+){1,6}(?:(?i:Hospitals?|Sadan|Clinic|Nursing Home|Medical College|Medical Centre|Medical Center|Medical University|Medical Institute|Health Centre|Health Center|Memorial Hospital|Labs?|Laboratory|Diagnostics|Trust|Charitable|Foundation|Pharmacy|Chikitsalaya|Aushadhalaya)|CHC|PHC)\b"),
     re.compile(r"\b(?i:District|Civil|General|Community|Primary|Sub[- ]?District|Women'?s?|Base|Railway|ESI|Government|Govt\.?|Zila)[ \t]+(?i:Hospital|Chikitsalaya|Health Centre|Health Center)(?:[ \t]+[A-Z][a-z]+)?"),
     re.compile(r"\b[0-5]\s?-\s?[0-5]\s?-\s?[0-5](?:\s?-\s?[0-5])?\b"),                     # 1-0-1
     re.compile(r"\b\d+(?:\.\d+)?[ \t]?" + _UNITS + r"(?![A-Za-z])"),                          # 5 mg
@@ -74,9 +76,8 @@ SHIELD_RX = [
     re.compile(r"\b(?:HR|PR|RR|SpO2|SPO2|Temp|T|Pulse|RBS|FBS|PPBS|HbA1c|Hb|TLC|Plt|Platelets?|Cr|Creat|eGFR|TSH|Na|K|INR|ESR|CRP|Wt|Ht|BMI|GCS)\s*[:=-]?\s*\d+(?:[.,]\d+)*", re.I),
     re.compile(r"\b[xX×]\s?\d+\s?(?:days?|d|wks?|weeks?|months?|mths?|yrs?|years?|दिन)\b"),  # x 5 days
     re.compile(r"\b\d+(?:,\d{2})*,\d{3}\b"),                                                # 1,50,000
-    # terminology codes and manufacturing numbers that only look like IDs: "SNOMED CT 234567890127",
-    # "LOINC 2345-7", "Batch ABC1234567", "Lot no. 22B1045"
-    re.compile(r"(?i)\b(?:SNOMED(?:[ \t-]?CT)?|LOINC|ICD-?(?:9|10|11)(?:-CM)?|CPT|RxNorm|HSN|ATC)(?:[ \t]+(?:code|id|concept))?[ \t]*[:#]?[ \t]*[0-9][0-9A-Z.\-]{2,19}\b"),
+    # terminology codes, lab accession numbers, and manufacturing numbers that only look like IDs
+    re.compile(r"(?i)\b(?:SNOMED(?:[ \t-]?CT)?|LOINC|ICD-?(?:9|10|11)(?:-CM)?|CPT|RxNorm|HSN|ATC|Accession)(?:[ \t]+(?:code|id|concept|no\.?|number|#))?[ \t]*[:#]?[ \t]*[0-9][0-9A-Z.\-]{2,19}\b"),
     re.compile(r"(?i)\b(?:batch|lot)(?:[ \t]*(?:no\.?|number|#))?[ \t]*[:#]?[ \t]*(?=[A-Z0-9\-/]*\d)[A-Z0-9][A-Z0-9\-/]{3,19}\b"),
 ]
 # a 14-digit compact timestamp (yyyymmddhhmmss) after a log / time word is a timestamp, not an ABHA number
@@ -248,7 +249,7 @@ def label_relation(label):
     return ("G", None)
 
 
-RX_REL = re.compile(r"(?<![\w])(?:([SDWHFMCB])\s?[/.\\]\s?[oO]\.?|son of|daughter of|wife of|husband of|father of|mother of|care of|पुत्र|सुपुत्र|पुत्री|सुपुत्री|धर्मपत्नी|पत्नी|पति|पिता|माता)(?![\w\u0900-\u097F])", re.I)
+RX_REL = re.compile(r"(?<![\w])(?:([SDWHFMCB])\s?[/.\\]\s?[oO]\.?(?![\u0900-\u097F0-9]|(?-i:[a-z]))|(?:son of|daughter of|wife of|husband of|father of|mother of|care of|पुत्र|सुपुत्र|पुत्री|सुपुत्री|धर्मपत्नी|पत्नी|पति|पिता|माता)(?![\w\u0900-\u097F]))", re.I)
 RX_REL_NOUN = re.compile(r"(?i)\b(wife|husband|son|daughter|father|mother|beta|beti|patni|pati|biwi|bahu|attendant|guardian|relative|bhai|brother|sister|bahan|behen"
                          r"|neighbou?r|caretaker|informant|companion|escort|attender|bystander)\b(?:'s)?\s*(?:name)?\s*(?:(?:was|is|hai|tha|thi|named|called)\s+)?[:\-]?\s*(?=[A-Z\u0900-\u097F])")
 from .namefind import CharNgramScorer, NameFinder, NamePropagator, norm_latin  # noqa: E402
@@ -335,7 +336,8 @@ RX_BY_CUE = re.compile(r"(?i)(?<![\w])(?:called|witnessed|raised|brought|accompa
                        r"verified|approved|authori[sz]ed|collected|received|entered|typed|dictated|transcribed|prepared|handed\s+over|picked\s+up|claimed|identified)\s+by\s*:?\s*(?=[A-Z\u0900-\u097F])")
 # a role noun naming a person who is not staff: "caller Saverin Ekhollow", "informant: Rama Devi"
 RX_ROLE_BEFORE = re.compile(r"(?i)(?<![\w])(?:caller|informant|attendant|visitor|guardian|caretaker|care\s?giver|complainant|requester|requestor|"
-                            r"bystander|escort|nominee|next\s+of\s+kin|contact\s+person|applicant|claimant|beneficiary|policy\s?holder|insured)"
+                            r"bystander|escort|nominee|next\s+of\s+kin|contact\s+person|applicant|claimant|beneficiary|policy\s?holder|insured|"
+                            r"audit(?:\s+reviewer)?(?:\s+note)?|reviewer(?:\s+note)?|auditor)"
                             r"\s*(?:name)?\s*[:\-]?\s*(?=[A-Z])")
 _RX_CAP_WORD = re.compile(r"([A-Z][a-z]{1,20}|[A-Z]{2,20})(?![\w'\u2019])")
 RX_ROLE_AFTER = re.compile(r"(?<![\w.])((?:[A-Z][a-z]+ ){1,2}[A-Z][a-z]+)(?=\s*\(\s*(?:attendant|visitor|relative|guardian|caretaker|bystander|wife|husband|son|daughter|mother|father|brother|sister|patient|pt|informant|witness)\b|\s*,?\s*(?:mob(?:ile)?|ph(?:one)?|contact|tel|cell)\.?\s*(?:no\.?)?\s*[:\-]?\s*(?:\+?91[\s-]?)?[6-9]\d)")
@@ -647,7 +649,13 @@ class Detector:
 
     def _collect_forward(self, text, toks, pos, maxn=3, lenient=True):
         """Name tokens starting at char pos. Skips honorifics. Returns (start,end) or None."""
-        idx = next((i for i, t in enumerate(toks) if t[0] >= pos), None)
+        strad = next((i for i, t in enumerate(toks) if t[0] < pos < t[1]), None)
+        if strad is not None and text[pos:toks[strad][1]][:1].isupper():
+            t = toks[strad]
+            toks = list(toks[:strad]) + [(pos, t[1], text[pos:t[1]])] + list(toks[strad + 1:])
+            idx = strad
+        else:
+            idx = next((i for i, t in enumerate(toks) if t[0] >= pos), None)
         if idx is None:
             return None
         gap = text[pos:toks[idx][0]]
@@ -969,7 +977,12 @@ class Detector:
         for m in RX_EMAIL.finditer(norm):
             spans.append(Span(m.start(), m.end(), "EMAIL", m.group(0)))
         for m in RX_ABHA.finditer(norm):
-            spans.append(Span(m.start(), m.end(), "ABHA", digits_only(m.group(0))))
+            d = digits_only(m.group(0))
+            ctx = norm[max(0, m.start() - 30):m.start()].lower()
+            if m.group(0).isdigit() and re.fullmatch(r"(?:19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])(?:[01]\d|2[0-3])[0-5]\d[0-5]\d", d) \
+                    and not re.search(r"abha|health\s?id|ndhm|abdm|आभा", ctx):
+                continue
+            spans.append(Span(m.start(), m.end(), "ABHA", d))
         for m in RX_AADHAAR.finditer(norm):
             raw = m.group(0)
             d = digits_only(raw)

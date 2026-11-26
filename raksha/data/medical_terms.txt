@@ -1,7 +1,7 @@
 # Clinical vocabulary (lowercase): diseases incl. eponyms, symptoms, anatomy, investigations, units, admin words.
 parkinson parkinsons alzheimer alzheimers huntington huntingtons hodgkin hodgkins crohn crohns addison addisons cushing cushings graves hashimoto hashimotos wilson wilsons
 guillain barre down downs turner turners marfan marfans kawasaki raynaud raynauds sjogren sjogrens behcet behcets paget pagets meniere menieres tourette tourettes asperger aspergers
-bright brights kaposi burkitt burkitts ewing ewings wilms hirschsprung duchenne becker fabry gaucher pompe tay sachs lyme chagas whipple whipples bartter gilbert gilberts conn conns
+bright brights kaposi burkitt burkitts ewing ewings wilms hirschsprung duchenne becker fabry gaucher pompe tay sachs lyme chagas whipple whipples bartter gilbert gilberts conn conns koch kochs hansen hansens apgar glasgow ryles foley ringers
 dengue malaria typhoid tuberculosis tb covid influenza flu pneumonia bronchitis asthma copd diabetes dm t2dm t1dm hypertension htn cad ihd mi stemi nstemi chf ckd aki esrd stroke cva tia
 epilepsy seizure migraine anemia anaemia jaundice hepatitis cirrhosis pancreatitis appendicitis cholecystitis gastritis gerd ulcer colitis ibs dysentery diarrhoea diarrhea cholera
 leptospirosis chikungunya scrub typhus filariasis kala azar leishmaniasis leprosy hiv aids syphilis gonorrhoea measles mumps rubella chickenpox varicella rabies tetanus diphtheria

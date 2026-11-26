@@ -107,9 +107,19 @@ def field_evidence(unit, ftype, value, label, eng, order=None):
     elif ftype == "diagnosis":
         unit.dx.add(v.strip().lower()[:80])
     if ftype in ("text", None, "clinical", "contact", "hospital", "record_id", "diagnosis"):
-        spans = eng.detector.detect(v, ftype, order)
-        spans_evidence(unit, v, [s for s in spans if s.kind != "AGE" and s.kind != "DOB"])
-        for d in core.ICD_RX.findall(v):
+        val_txt = v
+        if len(val_txt) >= 20 and " " not in val_txt.strip():
+            cur = val_txt.strip()
+            for _ in range(3):
+                dec = core._decode_b64_text(cur) or core._decode_b64_any(cur)
+                if not dec:
+                    break
+                cur = dec
+            if cur != val_txt.strip():
+                val_txt = cur
+        spans = eng.detector.detect(val_txt, ftype, order)
+        spans_evidence(unit, val_txt, [s for s in spans if s.kind != "AGE" and s.kind != "DOB"])
+        for d in core.ICD_RX.findall(val_txt):
             unit.dx.add(d)
 
 
@@ -341,11 +351,39 @@ def csv_prepare(doc, eng):
 
 def csv_extract(doc, eng):
     units = []
+    headers = [str(h).strip().lower() for h in doc.csv["header"]]
+    rel_col = next((i for i, h in enumerate(headers) if re.fullmatch(r"rel(?:_?type|ation(?:ship)?)?", h)), None)
+    # Detect split phone/aadhaar groups (e.g. ph_p1..ph_p3 or uid_b1..uid_b3)
+    split_groups = []
+    cur_type = None
+    cur_cols = []
+    for ci, t in enumerate(doc.types):
+        h = headers[ci]
+        is_split = t in ("phone", "aadhaar") and bool(re.search(r"(?:[_\-]?(?:p|b|part|blk|block)?[1-4])$", h))
+        if is_split and (cur_type == t or cur_type is None):
+            cur_type = t
+            cur_cols.append(ci)
+        else:
+            if len(cur_cols) >= 2:
+                split_groups.append((cur_type, cur_cols))
+            cur_type = t if is_split else None
+            cur_cols = [ci] if is_split else []
+    if len(cur_cols) >= 2:
+        split_groups.append((cur_type, cur_cols))
+
     for ri, row in enumerate(doc.rows):
         hosp = row[doc.hospital_col] if doc.hospital_col is not None else doc.hospital
         u = start_unit("row:%d" % ri, hosp)
+        row_rel = row[rel_col] if rel_col is not None and rel_col < len(row) else ""
         for ci, val in enumerate(row):
-            field_evidence(u, doc.types[ci], val, doc.csv["header"][ci], eng, doc.orders[ci])
+            lbl = (row_rel + " " + doc.csv["header"][ci]).strip() if (doc.types[ci] == "relative" and row_rel) else doc.csv["header"][ci]
+            field_evidence(u, doc.types[ci], val, lbl, eng, doc.orders[ci])
+        for stype, cols in split_groups:
+            joined = "".join(digits_only(row[ci]) for ci in cols if ci < len(row))
+            if stype == "phone" and len(joined) >= 10:
+                u.prof.phones.add(norm_phone(joined))
+            elif stype == "aadhaar" and len(joined) == 12:
+                u.prof.ids["AADHAAR"].add(joined)
         units.append(end_unit(u, eng))
     return units
 
@@ -565,14 +603,15 @@ def _json_evidence(node, unit, eng, parent=None, label="", order=None, depth=0):
                 field_evidence(unit, parent if parent in ("diagnosis",) else None, el, label, eng, order)
 
 
-def _clean_marker(value, eng, replacement="[REDACTED]"):
+def _clean_marker(value, eng, replacement="[REDACTED]", depth=0):
     clean, count = RX_CANARY.subn(replacement, value)
-    if not count and len(value) >= 8 and len(value) % 4 == 0 and core._RX_B64_SHORT.fullmatch(value):
+    if not count and depth < 3 and len(value) >= 8 and len(value) % 4 == 0 and core._RX_B64_SHORT.fullmatch(value):
         decoded = core._decode_b64_any(value)
         if decoded:
-            changed, count = RX_CANARY.subn(replacement, decoded)
-            if count:
+            changed = _clean_marker(decoded, eng, replacement, depth + 1)
+            if changed != decoded:
                 clean = base64.b64encode(changed.encode()).decode("ascii")
+                return clean
     if count:
         eng.count_ids(count, "CANARY")
     return clean
@@ -963,6 +1002,8 @@ def _collect_strings(node, out, key=None, depth=0):
         for v in node:
             _collect_strings(v, out, key, depth + 1)
     elif isinstance(node, str) and key in ("div", "text", "display", "valueString", "description", "title", "comment", "source", "value"):
+        if key == "div" and "<!--" in node:
+            node = re.sub(r"<!--.*?-->", "", node, flags=re.DOTALL)
         out.append(node)
 
 
@@ -1107,6 +1148,11 @@ def _fhir_walk(node, ctx, eng, key, depth=0, parent=None):
             return _fhir_shift(node, ctx.shift)
         if key == "display" and isinstance(parent, dict) and str(parent.get("reference", "")).startswith(("Practitioner", "Organization")):
             return node
+        if key == "div" and "<!--" in node:
+            cleaned_div, c_removed = re.subn(r"<!--.*?-->", "", node, flags=re.DOTALL)
+            if c_removed:
+                eng.count_ids(c_removed)
+            node = cleaned_div
         new, n, ents = render_value(node, ctx)
         eng.add_entities(ents, n)
         if key == "display" and isinstance(parent, dict) and str(parent.get("reference", "")) in eng.current_patient_refs:
@@ -1146,13 +1192,187 @@ def _clinical_token(tok, eng):
 _RX_KIN_AFTER = re.compile(r"(?i)\s+(?:bhaiya|bhaiyya|bhai|chachu|chacha|chachi|didi|mama|mami|bhabhi|mausi|mausa|nana|nani|dada|dadi|uncle|aunty|fufa|bua|bhaiyaji|chachaji|mamaji)\b|\s*(?:भैया|भाई|चाचा|चाची|दीदी|मामा|मामी|भाभी|मौसी)")
 
 
+def _is_hl7(text):
+    return bool(text and text.lstrip().startswith("MSH|"))
+
+
+def _hl7_iso(val):
+    v = val.strip()
+    if re.fullmatch(r"\d{8}", v):
+        return f"{v[:4]}-{v[4:6]}-{v[6:8]}"
+    return None
+
+
+def _shift_hl7_dt(val, shift):
+    v = val.strip()
+    if len(v) >= 8 and v[:8].isdigit():
+        try:
+            d = dt.date(int(v[:4]), int(v[4:6]), int(v[6:8])) + dt.timedelta(days=shift)
+            return d.strftime("%Y%m%d") + v[8:]
+        except ValueError:
+            pass
+    return val
+
+
+def _hl7_extract(doc, eng):
+    u = start_unit("doc", doc.hospital)
+    for line in doc.text.splitlines():
+        if not line.strip():
+            continue
+        fields = line.split("|")
+        seg = fields[0].strip()
+        if seg == "PID":
+            if len(fields) > 3 and fields[3].strip():
+                mrn = fields[3].split("^")[0].strip()
+                if mrn:
+                    field_evidence(u, "mrn", mrn, "mrn", eng)
+            if len(fields) > 5 and fields[5].strip():
+                comps = [c.strip() for c in fields[5].split("^") if c.strip()]
+                nm = " ".join(reversed(comps[:2])) if len(comps) >= 2 else (comps[0] if comps else "")
+                if nm:
+                    add_name(u, nm, eng)
+            if len(fields) > 7 and fields[7].strip():
+                iso = _hl7_iso(fields[7])
+                if iso:
+                    field_evidence(u, "dob", iso, "dob", eng)
+            if len(fields) > 8 and fields[8].strip():
+                field_evidence(u, "sex", fields[8].strip(), "sex", eng)
+            if len(fields) > 11 and fields[11].strip():
+                comps = fields[11].split("^")
+                if len(comps) >= 4 and comps[3].strip():
+                    field_evidence(u, "district", comps[3].strip(), "district", eng)
+                if len(comps) >= 3 and comps[2].strip():
+                    field_evidence(u, "village", comps[2].strip(), "village", eng)
+                if len(comps) >= 5 and comps[4].strip():
+                    field_evidence(u, "pin", comps[4].strip(), "pin", eng)
+            for idx in (13, 14):
+                if len(fields) > idx and fields[idx].strip():
+                    field_evidence(u, "phone", fields[idx].strip(), "phone", eng)
+            if len(fields) > 19 and fields[19].strip():
+                field_evidence(u, "aadhaar", fields[19].strip(), "aadhaar", eng)
+        elif seg == "NK1":
+            if len(fields) > 2 and fields[2].strip():
+                rel_lbl = fields[3].strip() if len(fields) > 3 and fields[3].strip() else "relative"
+                field_evidence(u, "relative", fields[2].strip(), rel_lbl, eng)
+            for idx in (5, 6):
+                if len(fields) > idx and fields[idx].strip():
+                    field_evidence(u, "phone", fields[idx].strip(), "phone", eng)
+        elif seg == "PV1":
+            if len(fields) > 44 and fields[44].strip():
+                iso = _hl7_iso(fields[44])
+                if iso:
+                    field_evidence(u, "date", iso, "admission", eng)
+        elif seg == "DG1":
+            if len(fields) > 3 and fields[3].strip():
+                u.dx.add(fields[3].strip().lower()[:80])
+                for d in core.ICD_RX.findall(fields[3]):
+                    u.dx.add(d)
+    finalize_unit(u, getattr(eng, "ref_year", None))
+    doc.name_keymap = {}
+    doc.cued_names = []
+    doc.spans = None
+    return [u]
+
+
+def _hl7_rewrite(doc, eng):
+    u = doc.units[0]
+    ctx = eng.unit_ctx(doc, u)
+    pol = eng.policy
+    out_lines = []
+    for line in doc.text.splitlines():
+        if not line.strip():
+            out_lines.append(line)
+            continue
+        fields = line.split("|")
+        seg = fields[0].strip()
+        if seg == "MSH":
+            if len(fields) > 3 and fields[3].strip() and stigma.mask_structured_facility(ctx):
+                fields[3] = "[FACILITY]"
+                eng.shield["facility_names_removed"] += 1
+            if len(fields) > 6 and fields[6].strip():
+                fields[6] = _shift_hl7_dt(fields[6], ctx.shift)
+        elif seg == "PID":
+            if len(fields) > 3 and fields[3].strip():
+                comps = fields[3].split("^")
+                comps[0] = ctx.psn or "[ID]"
+                ctx.psn_used = ctx.psn_used or bool(ctx.psn)
+                fields[3] = "^".join(comps)
+                eng.count_ids(1, "MRN")
+            if len(fields) > 5 and fields[5].strip():
+                fields[5] = ctx.psn or "[PATIENT]"
+                ctx.psn_used = ctx.psn_used or bool(ctx.psn)
+                eng.count_ids(1, "PATIENT_NAME")
+            if len(fields) > 7 and fields[7].strip():
+                b = band_for(ctx, ctx.age)
+                fields[7] = b if b else "[DOB]"
+                eng.count_ids(1, "DOB")
+            if len(fields) > 11 and fields[11].strip():
+                comps = fields[11].split("^")
+                dist = ctx.qi.get("district") or (comps[3].strip() if len(comps) > 3 else "")
+                if len(comps) > 0 and comps[0].strip():
+                    comps[0] = "[ADDRESS]"
+                if len(comps) > 1 and comps[1].strip():
+                    comps[1] = "[ADDRESS]"
+                if len(comps) > 2 and comps[2].strip():
+                    comps[2] = dist if (dist and ctx.level <= pol["district_level"]) else "[VILLAGE]"
+                if len(comps) > 3 and comps[3].strip():
+                    comps[3] = dist if (dist and ctx.level <= pol["district_level"]) else "[DISTRICT]"
+                if len(comps) > 4 and comps[4].strip():
+                    d = digits_only(comps[4])
+                    comps[4] = pin3(d) if (len(d) == 6 and ctx.level <= pol["pin3_level"]) else "[PIN]"
+                fields[11] = "^".join(comps)
+                eng.count_ids(1, "ADDRESS")
+            for idx in (13, 14):
+                if len(fields) > idx and fields[idx].strip():
+                    fields[idx] = "[PHONE]"
+                    eng.count_ids(1, "PHONE")
+            if len(fields) > 19 and fields[19].strip():
+                fields[19] = "[AADHAAR]"
+                eng.count_ids(1, "AADHAAR")
+        elif seg == "NK1":
+            if len(fields) > 2 and fields[2].strip():
+                fields[2] = "[RELATIVE]"
+                eng.count_ids(1, "RELATIVE_NAME")
+            for idx in (5, 6):
+                if len(fields) > idx and fields[idx].strip():
+                    fields[idx] = "[PHONE]"
+                    eng.count_ids(1, "PHONE")
+        elif seg == "PV1":
+            for idx in (44, 45):
+                if len(fields) > idx and fields[idx].strip():
+                    fields[idx] = _shift_hl7_dt(fields[idx], ctx.shift)
+        elif seg == "NTE":
+            if len(fields) > 3 and fields[3].strip():
+                txt = _clean_marker(fields[3], eng)
+                nv, n, ents = render_value(txt, ctx)
+                eng.add_entities(ents, n)
+                # Catch any remaining OOV proper-noun canary names in NTE comments
+                runs = eng.detector.oov_proper_runs(nv, getattr(eng, "safe_file_tokens", ()))
+                if runs:
+                    buf = list(nv)
+                    for a, b in reversed(runs):
+                        buf[a:b] = list("[REDACTED]")
+                        eng.count_ids(1, "CANARY")
+                    nv = "".join(buf)
+                fields[3] = nv
+        else:
+            fields = [_clean_marker(f, eng) for f in fields]
+        out_lines.append("|".join(fields))
+    return "\n".join(out_lines) + ("\n" if doc.text.endswith("\n") else "")
+
+
 def text_extract(doc, eng):
+    if _is_hl7(doc.text):
+        return _hl7_extract(doc, eng)
     order = eng.doc_order(doc)
     year = eng.doc_year(doc)
     text = doc.text
     spans = eng.detector.detect(text, None, order, year)
     doc.spans = spans
     u = start_unit("doc", doc.hospital)
+    mm = core._RX_MULT.search(text[:500])
+    if mm and not u.prof.multiplicity:
+        u.prof.multiplicity = mm.group(1).lower() + ":" + mm.group(2).upper()
     for s in spans:  # "Velunath Chachu:", "Kelvansh Bhaiya" - kinship address terms denote family, not the patient
         if s.kind == "NAME" and s.role != "patient" and _RX_KIN_AFTER.match(text, s.end):
             s.role = "relative"
@@ -1225,6 +1445,8 @@ def _given_compat(a, b):
 
 
 def text_rewrite(doc, eng):
+    if _is_hl7(doc.text):
+        return _hl7_rewrite(doc, eng)
     u = doc.units[0]
     ctx = eng.unit_ctx(doc, u)
     ctx.order = eng.doc_order(doc)

@@ -60,7 +60,7 @@ STRONG_ID = ("AADHAAR", "ABHA", "PAN")
 
 class Profile:
     __slots__ = ("rid", "hospital", "names", "initials", "rels", "phones", "ids", "byears", "sex", "pins",
-                 "districts", "weak", "has_identity", "dobs", "villages")
+                 "districts", "weak", "has_identity", "dobs", "villages", "multiplicity")
 
     def __init__(self, rid, hospital):
         self.rid = rid
@@ -78,6 +78,7 @@ class Profile:
         self.has_identity = False
         self.dobs = set()
         self.villages = set()
+        self.multiplicity = None
 
     def finalize(self):
         toks = {t for n in self.names for t in n}
@@ -191,6 +192,8 @@ class Linker:
             if x and y and not (x & y):
                 return -99.0, True, False
         if a.sex and b.sex and a.sex != b.sex:
+            return -99.0, True, False
+        if a.multiplicity and b.multiplicity and a.multiplicity != b.multiplicity:
             return -99.0, True, False
         d = None
         if a.byears and b.byears:

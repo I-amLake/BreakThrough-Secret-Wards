@@ -21,7 +21,7 @@ _RULES = [
     ("record_id", r"\b(visit id|visit no|bill no|bill id|sample id|sample no|claim id|order id|report id|encounter id|episode id|lab no|accession|package code|invoice no|receipt no|token no|bed no|ward no)\b"),
     ("mrn", r"\b(uhid|mrn|mr no|mrd|medical record|patient id|pat id|pt id|pid|reg no|regn no|registration no|registration|ip no|op no|ipd no|opd no|cr no|hospital no|hosp no|case no|patient no|record id|patient ref|patient number|पंजीकरण|यूएचआईडी|id)\b"),
     ("email", r"\b(email|e mail|mail id|mail|ईमेल)\b"),
-    ("phone", r"\b(phone|mobile|mobile no|mob|mob no|tel|telephone|cell|whatsapp|ph no|contact no|contact number|contact#|फोन|मोबाइल|फ़ोन)\b"),
+    ("phone", r"\b(phone|mobile|mobile no|mob|mob no|tel|telephone|cell|whatsapp|ph no|ph p[1-9]|phone p[1-9]|mob p[1-9]|contact no|contact number|contact#|फोन|मोबाइल|फ़ोन)\b"),
     ("relative", r"\b(fathers?|husbands?|mothers?|spouses?|guardians?|relative name|pita pati|relative|kin|attendant|nok|next of kin|s o|d o|w o|h o|care of|so do wo|pita|pati|patni|wife|son of|daughter of|wife of|पिता|पति|पत्नी|माता|अभिभावक|परिजन)\b"),
     ("dob", r"\b(dob|d o b|date of birth|birth date|birthdate|born|janm|janam|janm tithi|जन्म|जन्मतिथि)\b"),
     ("date", r"\b(date|dt|admission|admitted|admit|discharge|discharged|visit|doa|dod|dated|tarikh|timestamp|datetime|time|दिनांक|तारीख|तिथि)\b"),
@@ -29,12 +29,12 @@ _RULES = [
     ("age", r"\b(age sex|age gender|sex age)\b"),
     ("sex", r"\b(sex|gender|ling|लिंग)\b"),
     ("pin", r"\b(pin|pincode|pin code|postal|postal code|zip|zipcode|पिन|पिनकोड)\b"),
-    ("state", r"\b(state|राज्य)\b"),
+    ("state", r"\b(state|rajya|राज्य)\b"),
     ("district", r"\b(district|distt|dist|zila|zilla|jila|jilla|जिला|जनपद)\b"),
     ("village", r"\b(village|vill|gaon|gram|mohalla|gram mohalla|गांव|गाँव|ग्राम|मोहल्ला)\b"),
     ("tehsil", r"\b(tehsil|taluka|taluk|block|mandal|तहसील)\b"),
     ("city", r"\b(city|town|शहर|कस्बा)\b"),
-    ("address", r"\b(address|addr|add|pata|street|locality|area|house|colony|landmark|residence|resident|r o|line|पता|निवास|निवासी)\b"),
+    ("address", r"\b(address|addr|add|pata|street|locality|area|house|house no|h no|door|door no|flat|flat no|makan|plot|plot no|colony|landmark|residence|resident|r o|line|पता|निवास|निवासी)\b"),
     ("first_name", r"\b(first name|firstname|given name|given|fname|f name|forename)\b"),
     ("last_name", r"\b(last name|lastname|surname|family name|family|lname|l name)\b"),
     ("name", r"\b(name|naam|nam|patient|pt name|full name|fullname|middle name|नाम|मरीज|रोगी|मरीज़)\b"),
@@ -67,7 +67,7 @@ def classify_label(label, parent=None):
             return "last_name" if parent == "name" else "relative"
     if parent == "address" and re.search(r"\b(line|street|village|house|landmark|locality)\b", n):
         return "address"
-    if re.search(r"\b(address|addr|pata|पता)\b", n) and not re.search(r"\b(email|e mail|ip|web)\b", n):
+    if re.search(r"\b(address|addr|pata|पता)\b", n) and not re.search(r"\b(email|e mail|ip|web|pin|pincode|postal|zip|state|rajya|district|distt|dist|zila|zilla|jila|jilla|village|vill|gaon|gram|tehsil|taluka|taluk|block|mandal|city|town)\b", n):
         return "address"
     for t, rx in _COMPILED:
         if rx.search(n):

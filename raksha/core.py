@@ -125,7 +125,13 @@ def rel_from_value(value, header_rel=("G", None)):
     return header_rel, v
 
 
+_RX_MULT = re.compile(r"\b(triplet|twin|quadruplet|baby)\s*([1-4a-d])\b", re.I)
+
+
 def add_name(unit, name, eng):
+    m = _RX_MULT.search(str(name))
+    if m and not unit.prof.multiplicity:
+        unit.prof.multiplicity = m.group(1).lower() + ":" + m.group(2).upper()
     toks = name_keys(name)
     toks = [t for t in toks if t not in ("kumar", "devi", "ji", "md", "bai", "begum", "bano", "kumari", "singh", "kaur")
             or len(toks) <= 2]

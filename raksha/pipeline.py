@@ -148,6 +148,10 @@ class Engine:
             d = Doc(rel, data)
             docs.append(d)
             try:
+                base = rel.rsplit("/", 1)[-1]
+                ext = os.path.splitext(base)[1].lower()
+                if base.startswith(".") and ext not in (ingest.TEXT_EXT | ingest.CSV_EXT | ingest.JSON_EXT):
+                    raise Unsupported()
                 d.text = ingest.decode(data)
                 d.kind = ingest.sniff_kind(rel, d.text)
                 if d.kind == "json":
