@@ -259,7 +259,7 @@ class Engine:
     def learn_names(self, docs):
         """Second chance for names seen once in a cued context: tokens of free-text names tagged as
         patient / relative / cued (any script) join the runtime lexicon, so the rewrite pass also
-        catches the same word where it stands alone ("Subodh aur uski wife ..." -> later "Subodh").
+        catches the same word where it stands alone ("Thivaresh aur uski wife ..." -> later "Thivaresh").
         Only words that cannot be ordinary vocabulary are learnt (3+ letters, Titlecase or Devanagari,
         not stop/common/medical/ambiguous/honorific)."""
         lex = self.detector.lex

@@ -39,7 +39,7 @@ class Span:
 _UNITS = r"(?:mg|mcg|µg|ug|gm|g|kg|ml|mL|l|L|iu|IU|units?|U|meq|mEq|%|mmhg|mmHg|bpm|/min|mg/dl|mg/dL|g/dl|g/dL|mmol/l|mmol/L|/ul|/uL|/cumm|lakh|cells|°F|°C|F|C|cm|mm|puffs?|tabs?|caps?|drops?)"
 SHIELD_RX = [
     re.compile(r"(?i)(?<![0-9a-f-])[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?![0-9a-f-])"),   # UUIDs (FHIR ids)
-    # organisation names: "Shanti Nagar Charitable Hospital", "Seva Sadan", "City Labs"
+    # organisation names: "Navodaya Charitable Hospital", "Seva Sadan", "City Labs"
     re.compile(r"(?:\b[A-Z][A-Za-z.&'-]+[ \t]+){1,4}(?:(?i:Hospitals?|Sadan|Clinic|Nursing Home|Medical College|Labs?|Laboratory|Diagnostics|Trust|Charitable|Foundation|Pharmacy|Chikitsalaya|Aushadhalaya)|CHC|PHC)\b"),
     re.compile(r"\b(?i:District|Civil|General|Community|Primary|Sub[- ]?District|Women'?s?|Base|Railway|ESI|Government|Govt\.?|Zila)[ \t]+(?i:Hospital|Chikitsalaya|Health Centre|Health Center)(?:[ \t]+[A-Z][a-z]+)?"),
     re.compile(r"\b[0-5]\s?-\s?[0-5]\s?-\s?[0-5](?:\s?-\s?[0-5])?\b"),                     # 1-0-1
@@ -169,7 +169,7 @@ _NF_MODE = 2  # 1 = NameFinder, 2 = NameFinder + in-document name propagation
 _NON_KIN = {"neighbour", "neighbor", "caretaker", "informant", "companion", "escort", "attender", "bystander", "attendant", "guardian", "relative"}
 _PLACE_WORDS = {"hospital", "district", "tehsil", "village", "nagar", "pur", "ganj", "road", "colony", "mohalla", "ward", "block",
                 "lucknow", "delhi", "india", "pradesh", "uttar", "bihar", "chc", "phc", "medical", "college", "clinic", "centre", "center"}
-# Hinglish subject/object markers after a capitalised word: "Subodh ne bataya", "Subodh aur uski wife"
+# Hinglish subject/object markers after a capitalised word: "Thivaresh ne bataya", "Thivaresh aur uski wife"
 RX_HINGLISH_ARG = re.compile(r"(?<![\w.'])([A-Z][a-z]{2,})(?=\s+(?:ne|ko|ka|ki|ke|se|aur|bhi|ji|bole|boli|bola)\s+[a-z])")
 RX_REL_POST = re.compile(r"(?i)\s+(?:ki|ke|ka|की|के|का)\s+(wife|patni|biwi|pati|husband|beta|beti|bete|son|daughter|father|mother|maa|papa|bahu|पत्नी|पति|बेटा|बेटी|बेटे|पिता|माता|माँ|बहू)(?![\w\u0900-\u097F])")
 RX_DOCTOR = re.compile(r"(?<![\w])(?:Dr|DR|dr|Doctor|Prof)\.?\s*(?=[A-Z\u0900-\u097F])|(?:डॉ|डा|डॉक्टर)\.?\s*")
@@ -293,7 +293,7 @@ class Detector:
         if ok and re.fullmatch(r"[A-Za-z]\.?", nxt[2]) and text[nxt[1]:nxt[1] + 1] in ("/", "\\"):
             ok = False  # "S/o"
         if ok and prev[2].endswith(".") and len(prev[2].rstrip(".")) > 1 and not re.fullmatch(r"(?:[A-Z]\.)+", prev[2]):
-            ok = False  # sentence end "Rajan. Rajan"
+            ok = False  # sentence end "Kelvansh. Kelvansh"
         return ok
 
     def _tokens(self, text):
@@ -641,7 +641,7 @@ class Detector:
                 if b:
                     prel = REL_POST.get(m.group(0), ("G", None))
                     out.append(Span(b[0], b[1], "NAME", text[b[0]:b[1]], role="relative", meta={"rel": prel[0], "psex": prel[1]}))
-        # relation nouns  "wife Salma", "husband: Rajan"
+        # relation nouns  "wife Gonavati", "husband: Kelvansh"
         for m in RX_REL_NOUN.finditer(text):
             r = self._collect_forward(text, toks, m.end(), 3, True)
             if r and (text[r[0]].isupper() or has_devanagari(text[r[0]])):
@@ -653,13 +653,13 @@ class Detector:
                     continue
                 rel, psex = REL_NOUN.get(noun, ("G", None))
                 out.append(Span(r[0], r[1], "NAME", text[r[0]:r[1]], role="relative", meta={"rel": rel, "psex": psex}))
-        # Hinglish postposition "Rajan ki wife"
+        # Hinglish postposition "Kelvansh ki wife"
         for m in RX_REL_POST.finditer(text):
             b = self._collect_backward(text, toks, m.start(), 2)
             if b:
                 rel, psex = REL_POST.get(m.group(1).lower(), REL_POST.get(m.group(1), ("G", None)))
                 out.append(Span(b[0], b[1], "NAME", text[b[0]:b[1]], role="relative", meta={"rel": rel, "psex": psex}))
-            # "Bitto ki maa Ramrati": a capitalised word right after the kin noun names the subject
+            # "Pimmo ki maa Gonavati": a capitalised word right after the kin noun names the subject
             fw = re.match(r"\s*[:\-]?\s*", text[m.end():])
             r = self._collect_forward(text, toks, m.end() + fw.end(), 2, True)
             if r and all(self.plausible_name_tok(t) or self.tok_ok(t, False) for t in text[r[0]:r[1]].split()):
@@ -671,7 +671,7 @@ class Detector:
                 continue   # "Limcee ki dose", "Gonda ko refer": a weak cue needs a name-shaped word
             if self.plausible_name_tok(w) or known:
                 st = m.start(1)
-                # "Rukmini Devi ne", "Ram Prakash ko": take one more capitalised token on the left
+                # "Gonavati Devi ne", "Kelvansh Durovan ko": take one more capitalised token on the left
                 pv = re.search(r"([A-Z][a-z]{2,}) $", text[max(0, st - 30):st])
                 if pv and (self.plausible_name_tok(pv.group(1)) or self.tok_ok(pv.group(1), False)):
                     st -= len(pv.group(0))
@@ -718,7 +718,7 @@ class Detector:
                 w = text[r[0]:r[1]]
                 if all(t[:1].isupper() or has_devanagari(t) for t in w.split()):
                     out.append(Span(r[0], r[1], "NAME", w, role="cued"))
-        for m in RX_BEFORE_REL.finditer(text):  # "Asha, W/o Kamal": the subject of a relation marker is a person
+        for m in RX_BEFORE_REL.finditer(text):  # "Gonavati, W/o Kelvansh": the subject of a relation marker is a person
             w = m.group(1)
             if all(self._tok_ok_latin(t, True) and not lex.is_stop(t) and (not lex.is_medical(t.lower()) or t.lower() in lex.ambiguous)
                    and t.lower() not in lex.honor_pre for t in w.split()):
@@ -743,7 +743,7 @@ class Detector:
                     if (wc[0].isupper() or allcaps) and self._tok_ok_latin(wc, False):
                         seed = True
                     elif wc.lower() in lex.ambiguous and wc[0].isupper() and _AMBIG_CTX.match(text, toks[i][1]):
-                        seed = True  # "Asha ji", "Asha, W/o ..." (a name only with person context)
+                        seed = True  # "Gonavati ji", "Gonavati, W/o ..." (ambiguous words count only with person context)
                     elif f in self.dyn and not lex.is_stop(wc) and not lex.is_medical(wc) and len(wc) >= 4:
                         seed = True
             if not seed:
@@ -770,7 +770,7 @@ class Detector:
                     ok = self._tok_ok_deva(nw, True) and has_devanagari(w)
                 else:
                     ok = self._tok_ok_latin(nw, False) or (nw[:1].isupper() and self._tok_ok_latin(nw, True) and not self.lex.is_stop(nw) and len(nw) > 1) \
-                        or (nw[:1].isupper() and lex.is_surname_only(nw))   # "Sarita Kumari", "Fatima Begum"
+                        or (nw[:1].isupper() and lex.is_surname_only(nw))   # "Pramithika Kumari", "Zevrina Begum"
                 if not ok:
                     break
                 k += 1

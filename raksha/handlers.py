@@ -894,7 +894,7 @@ def text_extract(doc, eng):
     spans = eng.detector.detect(text, None, order, year)
     doc.spans = spans
     u = start_unit("doc", doc.hospital)
-    for s in spans:  # "Jagdish Chachu:", "Kamal Bhaiya" - kinship address terms denote family, not the patient
+    for s in spans:  # "Velunath Chachu:", "Kelvansh Bhaiya" - kinship address terms denote family, not the patient
         if s.kind == "NAME" and s.role != "patient" and _RX_KIN_AFTER.match(text, s.end):
             s.role = "relative"
     names = [s for s in spans if s.kind == "NAME" and s.role != "relative"]

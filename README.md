@@ -5,6 +5,26 @@ bundles, free-text notes in English, Devanagari Hindi and Hinglish) into a resea
 direct identifiers removed, the same patient linked across files and hospitals under one keyed
 pseudonym (`PSN-XXXXXX`), quasi-identifiers generalised, and all clinical content kept.
 
+**Team BreakThrough.** The 2-page Project Brief PDF is submitted alongside this repository.
+
+## What makes it different (USP)
+
+1. **Three scripts, one person.** Names are matched across English, Devanagari and Hinglish through
+   schwa-aware transliteration, a phonetic fold and a consonant skeleton, so `थिवरेश` in a Hindi note
+   and `Thivaresh` in a CSV link to the same pseudonym.
+2. **Context beats lists.** The meaning traps are handled by rules, not by a bigger dictionary:
+   `C/O fever` vs `C/O <name>`, `H/O TB`, ASHA worker vs a person, doctors kept, eponyms
+   (`Babinski sign`) and doses shielded. Unseen names are found from Hinglish/Hindi grammar plus a tiny
+   synthetic-trained name scorer, and the practice set still leaks 0 values with the gazetteer emptied.
+3. **Linkage that would rather abstain than merge.** A name alone never links; hard vetoes
+   (conflicting IDs/DOB/sex/age/relative) block merges, and clusters merge only when no cross pair is
+   vetoed (practice set: precision 1.00, recall 1.00, 0 wrong merges).
+4. **Patient-level privacy.** One keyed date shift and one age band per patient (intervals such as a
+   9-day stay stay exact), a k-anonymity planner over the quasi-identifiers that are actually
+   released, rare-diagnosis escalation and suppression, with measured attacker numbers in `report.json`.
+5. **Assume breach.** Stdlib only, offline, deterministic, in-memory, PII-free logs and errors,
+   secret read once from `RAKSHA_SECRET` and dropped from the environment, broken files quarantined.
+
 * **Models: one small classifier, nothing else.** `raksha/namefind_weights.json` (87 KB) is a
   character n-gram **logistic regression with 5,163 parameters** (5,162 feature weights + 1 bias) that
   scores whether a single word looks like an Indian personal name. It is trained **only on synthetic
@@ -19,13 +39,27 @@ pseudonym (`PSN-XXXXXX`), quasi-identifiers generalised, and all clinical conten
   PyYAML/RapidFuzz/charset-normalizer present). CPU only, offline, deterministic. Practice set (200 files):
   about 1.9 s and 35 MB peak RSS. A synthetic 2,400-file / 6,400-record set runs in about 12 s and 225 MB.
 
-## Quick start
+## Setup and quick start
+
+Requirements: Python 3.10 or newer, nothing else (no GPU, no network, no packages).
 
 ```bash
+git clone <repo> && cd <repo>
+python3 --version                        # 3.10+
 pip install -r requirements.txt          # a no-op: the file lists no packages (stdlib only)
 export RAKSHA_SECRET='…'                 # required; never written anywhere
-python main.py --input /path/to/input --output /path/to/out
-python scripts/validate_output.py --input /path/to/input --output /path/to/out   # -> CONTRACT OK
+python3 main.py --input /path/to/input --output /path/to/out
+python3 scripts/validate_output.py --input /path/to/input --output /path/to/out   # -> CONTRACT OK
+```
+
+Checks and tests (all offline):
+
+```bash
+python3 tests/test_guardrails.py         # forbidden packages, network imports, randomness, HKDF vector
+python3 tests/test_namefind.py           # unseen-name finder (invented names) and over-redaction guards
+python3 tests/acceptance_extended.py     # end-to-end traps, linkage, determinism, secret handling
+bash tests/test_offline.sh               # pipeline under a no-network namespace
+python3 scripts/train_namefind.py        # optional: rebuilds raksha/namefind_weights.json byte-identically
 ```
 
 If `RAKSHA_SECRET` is missing the program exits with code 2, prints a fixed message and writes
@@ -114,19 +148,19 @@ tests/
   number/address, PAN, phones (+91, 0-prefixed, split `98765 43210`, landlines, Devanagari digits),
   emails, labelled IDs (UHID/MRN/IPD/Reg/policy/PM-JAY), glued record IDs (`DHH-IPD-00591`), PIN with context.
 * **Names.** Context first, lists second: label:value pairs (`Naam:`, `मरीज़ का नाम:`, `Patient Name:`),
-  relation markers with trap handling (`S/o`, `W/o`, `D/o`; `C/O fever` vs `C/O Ramesh`; `H/O TB` vs
-  `H/O Ramesh`; `X की पत्नी Y`), relation nouns, Hinglish postpositions (`Asha ka BP`), honorifics and
+  relation markers with trap handling (`S/o`, `W/o`, `D/o`; `C/O fever` vs `C/O Thivaresh`; `H/O TB` vs
+  `H/O Thivaresh`; `X की पत्नी Y`), relation nouns, Hinglish postpositions (`Gonavati ka BP`), honorifics and
   kinship suffixes (`ji`, `bhaiya`, `behenji`), role cues (`witnessed by`, `X Y (attendant)`,
-  `X Y, mob 98…`), the subject of a relation marker (`Asha, W/o Kamal`), and the record's own
+  `X Y, mob 98…`), the subject of a relation marker (`Gonavati, W/o Kelvansh`), and the record's own
   patient name inside its free text. Gazetteers and the runtime lexicon (names learned from the
   structured columns of the current input) catch the rest; ambiguous words (`Asha` = ASHA worker)
   need person context. With the built-in gazetteer emptied, the practice set still leaks 0 of 3,230 values.
 * **Unseen given names.** A family name or gendered suffix (`Devi`, `Kumari`, `Bano`, `Begum`, `Yadav`, …)
   pulls in up to two preceding Titlecase words that are not stop/common/medical/place words
-  (`Rukmini Devi`). Hinglish argument markers (`X ne/ko/se/aur …`), kin/role nouns with a copula
+  (`Gonavati Devi`). Hinglish argument markers (`X ne/ko/se/aur …`), kin/role nouns with a copula
   (`the attendant was X`, `neighbour: X`) and `X ki maa Y` are cues too. A **second pass** adds every
   token of a name found in a cued context to the runtime lexicon before rewriting, so the same word is
-  also removed where it later stands alone (`Subodh aur uski wife …` … `Subodh was advised …`).
+  also removed where it later stands alone (`Thivaresh aur uski wife …` … `Thivaresh was advised …`).
 * **Unseen-name finder** (`namefind.py`). Every word is scored by the n-gram classifier plus Indic
   name suffixes; a span is a name when score + context passes a threshold. Context cues are right-hand
   Hinglish/Hindi grammar (`ne`/`ने`, `ko`/`को`, `ka/ki/ke`, kin/honorific nouns, `kal/aaj … discharge`)
@@ -215,6 +249,19 @@ patients); linkage precision 1.00, recall 1.00; no patient carries two non-overl
 0 raw copies; byte-identical across runs; a different secret changes every pseudonym and date shift.
 Synthetic set (`scripts/gen_data.py --patients 60`): 0 leaks of 658 values, 100% clinical preservation,
 linkage P 1.00 / R 0.98, 30 of 30 stays preserved.
+These are our own measurements on the practice set and on our synthetic generator, **not** the hidden
+evaluation score.
+
+Unseen-name finder on held-out synthetic notes (names invented from syllables and absent from every
+list we ship; Devanagari, cue-less English/Hinglish and lower-case Hinglish sentences):
+
+| set | v1.1 (rules only) | v1.2 (+ namefind) |
+|---|---:|---:|
+| name recall, set1 / set2 / set3 (487 / 471 / 443 name mentions) | 0.42 / 0.50 / 0.48 | 0.67 / 0.68 / 0.64 |
+| non-PII token retention, fresh vocabulary + templates never tuned on (setneg4) | 0.88 | 0.91 |
+| non-PII token retention, setneg / setneg2 / setneg3 (partly used for tuning) | 0.93 / 0.85 / 0.83 | 0.997 / 0.996 / 0.993 |
+
+The practice-set output is byte-identical between v1.1 and v1.2 (0 leaks either way).
 
 ## Known limitations
 

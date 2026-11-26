@@ -97,7 +97,7 @@ def parse_sex(v):
 
 
 def name_keys(name):
-    """Folded name tokens without honorifics/kinship suffixes ("Asha ji" -> ['asa'])."""
+    """Folded name tokens without honorifics/kinship suffixes ("Gonavati ji" -> ['gonavati'])."""
     from .lexicon import get_lexicon
     from .translit import _TOKEN_RE
     lex = get_lexicon()
@@ -315,7 +315,7 @@ def _decode_b64_text(text):
 
 
 def local_name_spans(text, ctx, spans):
-    """Tokens of THIS record's own patient name inside its free text ("Asha ka BP ..."): the record
+    """Tokens of THIS record's own patient name inside its free text ("Gonavati ka BP ..."): the record
     context makes even ambiguous tokens personal. Only names learnt from the same record are used."""
     keys = ctx.patient_keys
     if not keys:

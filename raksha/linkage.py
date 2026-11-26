@@ -132,7 +132,7 @@ class Linker:
                 used.add(bj)
                 matched += 1
                 matched_w += self.idf.get(t, 3.0) * (1.0 if best >= 0.97 else 0.8)
-        # initials compatibility: "R. Sharma" vs "Ramesh Sharma"
+        # initials compatibility: "T. Durovan" vs "Thivaresh Durovan"
         ini1 = [t for t in n1 if len(t) == 1]
         ini2 = [t for t in n2 if len(t) == 1]
         un2 = [u for j, u in enumerate(full2) if j not in used]
@@ -141,12 +141,12 @@ class Linker:
             all(any(t[0] == i for t in un1) or i in ini1 for i in ini2)
         if matched == 0:
             return -6.0, False, 0
-        # given-name disagreement with a surname match (Ramesh Sharma vs Suresh Sharma) is a mismatch
+        # given-name disagreement with a surname match (Thivaresh Durovan vs Kelvansh Durovan) is a mismatch
         if matched >= 1 and un1 and un2:
             g1, g2 = full1[0], full2[0]
             if _tok_sim(g1, g2) < 0.8 and g1 in un1 and g2 in un2:
                 return -5.0, False, 0
-            # surname disagreement with a given-name match (Manjeet Saroj vs Manjeet Qureshi)
+            # surname disagreement with a given-name match (Thivaresh Durovan vs Thivaresh Kalvoti)
             l1, l2 = full1[-1], full2[-1]
             if len(full1) >= 2 and len(full2) >= 2 and l1 in un1 and l2 in un2 and _tok_sim(l1, l2) < 0.8 \
                     and l1 not in _GENERIC_SURNAME and l2 not in _GENERIC_SURNAME:
@@ -219,7 +219,7 @@ class Linker:
         elif name_ok and (dob_same or rel_match or (place and d is not None and d <= 1)):
             linkable = True
         elif given_ok and rel_match and (d is None or d <= 2):
-            linkable = True  # fragment: "Meera, W/o Rajan"
+            linkable = True  # fragment: "Gonavati, W/o Kelvansh"
         return s, False, linkable
 
     # ------------------------------------------------------------- blocking
@@ -235,7 +235,7 @@ class Linker:
         for p in profs:
             for ph in p.phones:
                 phone_deg[ph] += 1
-        single = set()  # skeletons of one-token names ("Asha ji"): full names must meet these fragments
+        single = set()  # skeletons of one-token names ("Gonavati ji"): full names must meet these fragments
         for p in profs:
             for nm in p.names:
                 full = [t for t in nm if len(t) > 1]
