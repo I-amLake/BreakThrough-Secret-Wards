@@ -1,0 +1,27 @@
+# Common Indian given names (Latin). Hand-built general gazetteer; not derived from any test data.
+aarav abhay abhishek aditya ajay ajit akash akhil akshay alok aman amar amit amitabh anand anil ankit ankur anshul anup anurag arjun arun arvind ashish ashok ashwin atul ayush
+balram bharat bhupendra bhushan brijesh chandan chandra chetan daya deepak dev devendra dhananjay dharmendra dheeraj dilip dinesh durgesh gagan ganesh gaurav girish gopal govind gyan
+hari harish hemant himanshu inder ishwar jagdish jai jaideep jatin jayant jitendra kailash kamal kamlesh kapil karan kartik kaushal keshav kishan kishore krishna kuldeep kunal lakhan lalit lokesh
+madan mahavir mahendra mahesh manish manoj mayank mithilesh mohan mohit mukesh mukul nand nandan narayan narendra naresh naveen navin nikhil nilesh nirmal nitin nitish om omprakash pankaj
+param paras pawan prabhat pradeep prakash pramod pranav prashant pratap praveen prem prince puneet pushkar raghav raghu rahul raj rajan rajat rajeev rajendra rajesh rajiv rajkumar rakesh ram
+raman ramesh ramnath ranjan ratan ravi ravindra rishi ritesh rohan rohit sachin sagar sahil sanjay sanjeev santosh sarvesh satish satya saurabh shailendra shankar shashi shekhar shiv shivam
+shubham shyam siddharth sohan sombir sonu subhash sudhir sujit sumit sunil suraj surendra suresh sushil tarun tej tushar udit umesh upendra uttam varun ved vijay vikas vikram vimal vinay
+vinod vipin virendra vishal vishnu vivek yash yashpal yogendra yogesh
+abdul abid adil afzal ahmad ahmed akbar akram altaf amir anwar arif arshad asad asif aslam ayaan azhar faisal farhan faiz farooq haider hamid haroon hasan hussain imran irfan ishaq jamal
+javed junaid kabir kaleem kamran khalid mehboob moin mohammad mohammed muhammad mohd mujeeb mustafa nadeem naeem nasir naseem nawaz osman owais parvez rafiq rahim rashid rehan riyaz rizwan
+sajid salim salman sameer shabbir shadab shahid shahnawaz shakeel shamim sharif shoaib sohail suhail tabrez talib tanveer tariq usman wasim yasir yusuf zafar zahid zaid zakir zeeshan zubair
+amarjeet amarjit baljit baljeet balwinder balwant gurdeep gurmeet gurpreet gurvinder harbhajan harjeet harjit harpreet jaspreet jaswinder jaswant kulwant manpreet manjit paramjit ranjit
+sukhwinder sukhdev tejinder
+anbu arumugam balaji balu ganapathy gopi jayakumar karthik krishnan kumaran mani murali murugan muthu nagaraj palani prasad raja rajagopal ramakrishna ramaswamy ranganathan sankar saravanan
+selvam senthil shanmugam sivakumar srinivas srinivasan subramanian sundar suresh thangaraj venkat venkatesh vijayakumar
+aarti aishwarya akanksha alka amrita anamika anita anjali anju ankita annu anuradha anusha aparna archana arti asha babita bhagwati bhanu bharti bhavna bimla chanda chandni chhaya deepa deepika
+devika dimple divya durga ekta gauri geeta gita gunjan hema hemlata indira indu jaya jyoti kajal kalpana kamini kamla kamala kanchan kanta karishma kaushalya kavita kavya khushboo kiran
+komal kusum lakshmi lalita lata laxmi madhu madhuri mala malti mamta manisha manju maya meena meenakshi meera megha mohini monika mukta nandini neelam neeta neetu neha nidhi nirmala nisha
+nitu padma pallavi parvati payal pinki pooja poonam prabha pragati pramila prathibha preeti prema priya priyanka pushpa radha radhika rajni rakhi ramya rani rashmi reena rekha renu reshma
+ritu rohini roshni ruby rupa sadhana sakshi sangeeta sanjana sapna sarala sarita sarla saroj saraswati savita seema shakuntala shalini shanti sharda sheela shikha shilpa shobha shraddha
+shruti shweta simran sita smita sneha sonal sonam sonia sudha suman sumitra sunaina sunita supriya sushila sushma swati tanuja tara uma urmila usha vandana varsha vidya vimla vineeta
+yamuna
+afreen aisha ayesha farah farhana farida farzana fatima heena hina jahanara kausar khadija mehnaz mumtaz najma nargis nasreen nazia noor parveen rehana rubina rukhsana salma sana shabana
+shaheen shahnaz shazia sultana tabassum yasmin zainab zara zarina zubeda
+gurleen harleen jasleen jaspal kuljeet manjeet navneet rajwinder sukhjeet
+amudha jayalakshmi kalaivani lakshmamma malathi meenakshi revathi saranya selvi shanthi sumathi valli vasanthi

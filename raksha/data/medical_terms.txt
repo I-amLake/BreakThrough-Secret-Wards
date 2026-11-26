@@ -1,0 +1,27 @@
+# Clinical vocabulary (lowercase): diseases incl. eponyms, symptoms, anatomy, investigations, units, admin words.
+parkinson parkinsons alzheimer alzheimers huntington huntingtons hodgkin hodgkins crohn crohns addison addisons cushing cushings graves hashimoto hashimotos wilson wilsons bell bells
+guillain barre down downs turner turners marfan marfans kawasaki raynaud raynauds sjogren sjogrens behcet behcets paget pagets meniere menieres tourette tourettes asperger aspergers
+bright brights kaposi burkitt burkitts ewing ewings wilms hirschsprung duchenne becker fabry gaucher pompe tay sachs lyme chagas whipple whipples bartter gilbert gilberts conn conns
+dengue malaria typhoid tuberculosis tb covid influenza flu pneumonia bronchitis asthma copd diabetes dm t2dm t1dm hypertension htn cad ihd mi stemi nstemi chf ckd aki esrd stroke cva tia
+epilepsy seizure migraine anemia anaemia jaundice hepatitis cirrhosis pancreatitis appendicitis cholecystitis gastritis gerd ulcer colitis ibs dysentery diarrhoea diarrhea cholera
+leptospirosis chikungunya scrub typhus filariasis kala azar leishmaniasis leprosy hiv aids syphilis gonorrhoea measles mumps rubella chickenpox varicella rabies tetanus diphtheria
+pertussis polio sepsis septicemia uti pyelonephritis nephrotic nephritic glomerulonephritis hypothyroidism hyperthyroidism thyroid goitre goiter obesity arthritis osteoarthritis rheumatoid
+gout lupus sle psoriasis eczema dermatitis scabies vitiligo cataract glaucoma conjunctivitis otitis sinusitis tonsillitis pharyngitis laryngitis cancer carcinoma tumour tumor lymphoma
+leukemia leukaemia myeloma sarcoma melanoma metastasis fracture sprain burn burns trauma injury poisoning snakebite depression anxiety schizophrenia bipolar dementia autism adhd
+thalassemia thalassaemia sickle hemophilia haemophilia pcos pcod endometriosis fibroid preeclampsia eclampsia anc pnc pregnancy gravida para abortion miscarriage ectopic
+fever bukhar pain dard cough khansi cold zukam vomiting ulti nausea headache sardard giddiness chakkar dizziness weakness kamzori fatigue breathlessness dyspnea dyspnoea sob chest
+abdominal abdomen swelling sujan rash itching khujli bleeding loose motions constipation burning micturition dysuria palpitation palpitations syncope fainting convulsions fits
+chills rigors malaise anorexia weight loss insomnia cramps backache bodyache body ache sore throat runny nose wheeze wheezing hemoptysis haematemesis melena jaundiced edema oedema
+bp pulse pr hr rr spo2 temp temperature sugar rbs fbs ppbs hba1c hb hgb tlc dlc esr crp cbc lft kft rft lipid ecg ekg echo xray x-ray usg ct mri cxr abg urine stool culture sensitivity
+platelet platelets wbc rbc neutrophils lymphocytes eosinophils creatinine urea bilirubin sgot sgpt alt ast alp albumin globulin sodium potassium chloride tsh t3 t4 ldl hdl vldl
+triglycerides cholesterol inr pt aptt ns ivf rl dns ors
+mg mcg gm g kg ml l dl mmhg bpm mmol iu units unit cm mm
+opd ipd icu iccu nicu picu er casualty ward bed ot lama dama nad nil afebrile febrile conscious oriented stable vitals review followup follow-up advice adv rx dx hx cx k/c/o kco h/o
+diagnosis provisional final discharge admission admitted summary history examination investigation investigations treatment medication medications prescription impression plan
+complaint complaints chief presenting known case patient pt male female sex age years yrs months days weeks
+department medicine surgery orthopaedics orthopedics paediatrics pediatrics gynaecology gynecology obstetrics cardiology neurology nephrology oncology psychiatry dermatology ent ophthalmology
+hospital clinic chc phc district civil general government medical college institute aiims pgi
+hindi english nurse sister staff doctor consultant physician surgeon resident intern attendant asha anm anganwadi
+apgar babinski kernig brudzinski murphy murphys ringer ringers foley foleys ryles ryle glasgow gcs korsakoff wernicke lachman mcmurray phalen tinel romberg trendelenburg virchow
+horner horners barrett barretts zollinger ellison stevens johnson nephrotic budd chiari dandy walker arnold klinefelter noonan edwards patau rett tetralogy fallot eisenmenger
+mallory weiss boerhaave dupuytren dupuytrens osgood schlatter perthes legg calve colles smith barton monteggia galeazzi pott potts scheuermann bennett bennetts

@@ -1,0 +1,8 @@
+# Common Indian surnames / family names (Latin). Hand-built general gazetteer.
+agarwal agrawal ahluwalia ahmed ansari arora awasthi azmi bajpai bakshi banerjee bansal baig behera bhagat bhardwaj bhatia bhatt bhattacharya bisht biswas bose brar chakraborty chatterjee
+chaturvedi chaudhary chaudhari chauhan chawla choudhary chopra dalal das dasgupta dave desai deshmukh deshpande dhillon dixit dubey dutta dwivedi farooqui gaikwad ganguly garg gehlot ghosh gill
+goel gokhale goswami gupta gurjar hashmi hegde hembrom hussain iyer iyengar jadhav jain jaiswal jha joshi kadam kakkar kamble kapoor kashyap katiyar khan khanna khatri kisku kohli kulkarni
+kumar kushwaha lal lodhi mahajan mahato malhotra malik mandal marandi maurya meena mehra mehta menon mirza mishra mittal mohanty mondal more mukherjee munda murmu nadar naidu naik nair
+nath nayak negi nishad ojha oraon pal panda pandey pandit pant paswan patel pathak pathan patil patnaik pawar pillai prajapati prasad qureshi rai rajput rana rao rastogi rathore rathod rawat
+reddy rizvi roy sahni sahu sahoo saini saxena sen sethi shah shaikh sharma sheikh shetty shinde shukla siddiqui sidhu singh singhal sinha solanki soni soren srivastava subramaniam syed
+thakur tiwari tomar tripathi trivedi tudu tyagi upadhyay usmani varma verma vyas yadav zaidi kaur devi bai kumari begum bano khatoon

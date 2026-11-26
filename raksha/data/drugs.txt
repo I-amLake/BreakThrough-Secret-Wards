@@ -1,0 +1,26 @@
+# Drug generics and common Indian brands (lowercase). Never treated as names.
+paracetamol acetaminophen dolo crocin calpol metacin ibuprofen brufen combiflam diclofenac voveran aceclofenac zerodol nimesulide nise aspirin ecosprin disprin clopidogrel clopilet
+atorvastatin atorva rosuvastatin rosuvas statin metformin glycomet glucophage glimepiride amaryl gliclazide glipizide sitagliptin januvia vildagliptin galvus teneligliptin dapagliflozin
+empagliflozin insulin mixtard actrapid lantus glargine novorapid humalog pioglitazone voglibose acarbose
+amlodipine amlong amlokind telmisartan telma losartan losar olmesartan ramipril cardace enalapril lisinopril atenolol aten metoprolol metolar betaloc bisoprolol carvedilol nebivolol
+propranolol inderal hydrochlorothiazide furosemide lasix torsemide spironolactone aldactone nitroglycerin isosorbide sorbitrate digoxin warfarin heparin enoxaparin clexane apixaban
+rivaroxaban dabigatran
+amoxicillin mox augmentin clavam amoxyclav azithromycin azithral azee ciprofloxacin ciplox ofloxacin oflox levofloxacin levoflox norfloxacin norflox cefixime taxim zifi ceftriaxone monocef
+cefuroxime cefpodoxime cefadroxil cephalexin doxycycline metronidazole metrogyl flagyl tinidazole linezolid vancomycin meropenem piperacillin tazobactam gentamicin amikacin clindamycin
+nitrofurantoin cotrimoxazole septran rifampicin isoniazid pyrazinamide ethambutol akt fluconazole itraconazole terbinafine clotrimazole candid acyclovir valacyclovir oseltamivir
+ivermectin albendazole zentel mebendazole hydroxychloroquine hcq chloroquine artesunate primaquine
+pantoprazole pan pantocid omeprazole omez rabeprazole razo esomeprazole nexpro lansoprazole ranitidine rantac famotidine domperidone domstal ondansetron emeset ondem metoclopramide
+perinorm sucralfate digene gelusil cremaffin lactulose bisacodyl dulcolax ors electral loperamide racecadotril sporlac
+cetirizine cetzine levocetirizine montelukast montair fexofenadine allegra chlorpheniramine avil salbutamol asthalin levosalbutamol budesonide budecort formoterol foracort seroflo
+fluticasone ipratropium tiotropium deriphyllin theophylline ambroxol benadryl ascoril grilinctus dextromethorphan
+prednisolone wysolone methylprednisolone dexamethasone hydrocortisone betamethasone deflazacort
+levothyroxine thyronorm eltroxin carbimazole neomercazole
+levodopa carbidopa syndopa pramipexole ropinirole trihexyphenidyl donepezil memantine rivastigmine phenytoin eptoin valproate valparin levetiracetam levipil carbamazepine tegretol
+lamotrigine clonazepam alprazolam lorazepam diazepam midazolam gabapentin pregabalin amitriptyline nortriptyline sertraline escitalopram fluoxetine paroxetine olanzapine risperidone
+quetiapine haloperidol lithium zolpidem
+tramadol ultracet morphine fentanyl tapentadol buprenorphine ketorolac
+ferrous folic iron calcium shelcal vitamin multivitamin becosules neurobion zincovit methylcobalamin cholecalciferol uprise zinc magnesium potassium
+mannitol dextrose saline ringer albumin oxytocin misoprostol mifepristone dinoprostone progesterone duphaston estradiol tamoxifen letrozole methotrexate cyclophosphamide cisplatin
+carboplatin paclitaxel doxorubicin imatinib tacrolimus cyclosporine mycophenolate azathioprine allopurinol febuxostat colchicine sildenafil tadalafil tamsulosin finasteride
+adrenaline epinephrine noradrenaline dopamine dobutamine atropine
+tab tablet cap capsule syp syrup inj injection oint ointment drops susp suspension gel cream inhaler neb nebulization iv im sc po stat sos prn hs od bd bid tds tid qid qds ac pc

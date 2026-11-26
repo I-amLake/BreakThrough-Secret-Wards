@@ -1,0 +1,10 @@
+# Latin stop / common words (English + Hinglish) that must never be tagged as a name on their own.
+a an the and or of in on at to for from by with without as is are was were be been has have had not no yes it its this that these those he she his her him they them their we our you your
+i me my mr mrs ms dr name patient age sex gender male female address phone mobile contact date time day days week weeks month months year years old new yo yrs
+morning evening night today yesterday tomorrow daily before after above below left right upper lower high low normal mild moderate severe acute chronic since x times per
+hai hain tha thi the ka ki ke ko se me mein par aur ya nahi nahin bhi ab jab tab kab kya kyu kyun kaise kaun haan na ne raha rahi rahe gaya gayi gaye hua hui hue diya diye liya
+kar karo karna karte karke kiya ho hota hoti tak wala wali wale abhi phir bahut thoda zyada kam ek do teen char paanch saath bina liye iske uske unke unka unki mera meri apna apni
+sahab ji didi bhai baba amma maa papa beta beti bachcha bachche ghar gaon village city town district state road street lane colony nagar mohalla near opp behind sector ward block house
+hno flat floor pin pincode india pradesh
+will mark grace hope faith joy rose may june august april march january february july september october november december monday tuesday wednesday thursday friday saturday sunday
+sir madam team staff note notes remarks plan advice review report result results reason level levels type total
