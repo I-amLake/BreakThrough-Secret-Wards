@@ -516,7 +516,7 @@ value), add an invented example to `tests/test_structural.py`, and check the pra
 * Ages written in words are found in an age frame (age cue, unit + ka/ki/old, `वर्षीय`, brackets).
   A number-word spelling missing from the built-in English/Hindi/Hinglish list ("chausath") is missed.
   So is a spelled age written as a duration ("for sixty years").
-* Formats beyond CSV/TSV/JSON/FHIR/text (NDJSON/JSON Lines, PDF, images, XML, HL7v2) are quarantined.
+* Formats beyond CSV/TSV/JSON/FHIR/HL7v2/text (NDJSON/JSON Lines, PDF, images, XML) are quarantined.
 * Quarantine policy (v1.9): files with invalid bytes, JSON with NaN/Infinity or duplicate keys, and JSON
   saved under a .csv name are quarantined. The official spec accepts either quarantine or a safe export
   for such files; the Opus kit requires quarantine, so we quarantine (valid under both). On the practice
