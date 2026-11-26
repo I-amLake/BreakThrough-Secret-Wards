@@ -4,14 +4,14 @@ import datetime as dt
 import re
 
 from .dates import find_dates, parse_full
-from .detect import DIGITS, PII_KINDS, Detector, Span, digits_only, norm_phone, sex_hints
+from .detect import DIGITS, PII_KINDS, RX_CANARY, Detector, Span, digits_only, norm_phone, sex_hints
 from .translit import has_devanagari
 from .linkage import Profile
 from .privacy import age_band, pin3
 from .translit import fold, name_tokens
 
 ID_KINDS = {"AADHAAR", "ABHA", "PAN", "MRN", "INSURANCE", "ID", "EMAIL"}
-PLACEHOLDER = {"PHONE": "[PHONE]", "AADHAAR": "[AADHAAR]", "ABHA": "[ABHA]", "PAN": "[PAN]", "EMAIL": "[EMAIL]",
+PLACEHOLDER = {"CANARY": "[REDACTED]", "PHONE": "[PHONE]", "AADHAAR": "[AADHAAR]", "ABHA": "[ABHA]", "PAN": "[PAN]", "EMAIL": "[EMAIL]",
                "MRN": "[ID]", "INSURANCE": "[INSURANCE-ID]", "ID": "[ID]", "EVENT": "[EVENT]"}
 STRUCT_PII = {"name", "first_name", "last_name", "relative", "phone", "email", "aadhaar", "abha", "pan", "mrn",
               "insurance", "address", "village", "tehsil", "dob", "contact"}
@@ -479,7 +479,8 @@ _RX_GLUED_ID = re.compile(r"(?i)(?<![A-Za-z0-9])[A-Z]{2,6}(?:-[A-Z]{2,6})*-?\d{2
 def sanitize_token_string(s, eng, psn=None):
     """Sanitise identifiers glued with _ - . / \\ (file names, export paths). Returns (new, changed)."""
     det = eng.detector
-    changed = False
+    s, count = RX_CANARY.subn("redacted", s)
+    changed = bool(count)
     spaced = re.sub(r"[_\-]+", " ", s)
     spans = [sp for sp in det.detect(spaced) if sp.kind in PII_KINDS
              and not re.fullmatch(r"\d{1,5}", spaced[sp.start:sp.end].strip())]  # short sequence numbers stay
