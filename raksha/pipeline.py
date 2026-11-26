@@ -10,7 +10,7 @@ from collections import defaultdict
 
 from . import core, handlers, ingest, stigma
 from .detect import Detector, PII_KINDS
-from .ingest import BinaryFile, EmptyFile, FhirInvalid, GarbledText, UnsafeEntry, Unsupported
+from .ingest import BinaryFile, ContentMismatch, CorruptBytes, EmptyFile, FhirInvalid, GarbledText, NonStandardJson, UnsafeEntry, Unsupported
 from .linkage import Linker
 from .privacy import Planner, band_range
 from .secure import SafeLog, error_category, sha256_bytes
@@ -18,6 +18,10 @@ from .translit import devanagari_to_latin, fold, has_devanagari, name_tokens, sk
 
 GENERIC_TOKENS = {"kumar", "devi", "ji", "md", "mohd", "mohammad", "bai", "begum", "bano", "kumari", "singh", "kaur",
                   "lal", "prasad", "ram", "khan", "sahab", "shri", "smt"}
+
+
+# a name right after a doctor title is the clinician (kept), even when a patient has the same name
+_RX_DR_BEFORE = re.compile(r"(?:\b(?:Dr|DR|dr|Prof)\.?|Doctor|डॉ\.?|डा\.)\s*$")
 
 
 class Doc:
@@ -147,7 +151,7 @@ class Engine:
                 d.text = ingest.decode(data)
                 d.kind = ingest.sniff_kind(rel, d.text)
                 if d.kind == "json":
-                    d.obj = ingest.parse_json(d.text)
+                    d.obj = ingest.parse_json(d.text, rel)
                     if ingest.is_fhir(d.obj):
                         ingest.check_fhir(d.obj)
                         d.kind = "fhir"
@@ -156,7 +160,8 @@ class Engine:
                 elif d.kind == "text" and re.search(r"<\?xml|<ClinicalDocument|<html", d.text[:500], re.I):
                     raise Unsupported()
                 d.status = "ok"
-            except (Unsupported, BinaryFile, EmptyFile, GarbledText, FhirInvalid, ValueError, RecursionError,
+            except (Unsupported, BinaryFile, EmptyFile, GarbledText, FhirInvalid, CorruptBytes, NonStandardJson, ContentMismatch,
+                    ValueError, RecursionError,
                     UnicodeDecodeError, MemoryError) as exc:
                 self._quarantine(d, exc)
             d.hospital = self._hospital(d)
@@ -645,7 +650,7 @@ class Engine:
                     if any(body[seg[k][1]:seg[k + 1][0]] not in (" ", "  ") for k in range(n - 1)):
                         continue
                     key = " ".join(body[a:b] for a, b in seg).lower()
-                    if key in self._sweep_names:
+                    if key in self._sweep_names and not _RX_DR_BEFORE.search(body[max(0, seg[0][0] - 8):seg[0][0]]):
                         hits.append((seg[0][0], seg[-1][1]))
                         i += n
                         done = True

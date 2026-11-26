@@ -406,10 +406,48 @@ def local_name_spans(text, ctx, spans):
     return out
 
 
+_RX_DATA_URI = re.compile(r"data:([\w.+\-]+/[\w.+\-]+)?((?:;[\w\-]+=[\w\-.]+)*);base64,([A-Za-z0-9+/]+={0,2})")
+
+
+def data_uri_sub(text, ctx, field_hint=None):
+    """`data:text/plain;base64,...` URIs: decode, sanitise the text inside, re-encode. A payload that is
+    not text (or does not decode) is replaced by an empty payload: an opaque blob is never passed on."""
+    n = [0]
+    ents = {}
+
+    def sub(m):
+        try:
+            raw = base64.b64decode(m.group(3) + "=" * (-len(m.group(3)) % 4))
+            dec = raw.decode("utf-8")
+        except Exception:
+            n[0] += 1
+            return "data:application/octet-stream;base64,"
+        new, k, e = render_value(dec, ctx, field_hint)
+        n[0] += k
+        for kk, vv in e.items():
+            ents[kk] = ents.get(kk, 0) + vv
+        return "data:%s%s;base64,%s" % (m.group(1) or "text/plain", m.group(2) or "", base64.b64encode(new.encode("utf-8")).decode("ascii"))
+    return _RX_DATA_URI.sub(sub, text), n[0], ents
+
+
 def render_value(value, ctx, field_hint=None):
     text = str(value)
     if not text.strip():
         return text, 0, {}
+    if "base64," in text and _RX_DATA_URI.search(text):
+        new, n, ents = data_uri_sub(text, ctx, field_hint)
+        if not _RX_DATA_URI.sub("", new).strip():
+            return new, n, ents
+        rest, n2, e2 = render_value(_RX_DATA_URI.sub("\x00", new), ctx, field_hint)
+        uris = [m.group(0) for m in _RX_DATA_URI.finditer(new)]
+        if rest.count("\x00") == len(uris):
+            it = iter(uris)
+            out = re.sub("\x00", lambda _: next(it), rest)
+        else:
+            out = rest.replace("\x00", "")
+        for kk, vv in e2.items():
+            ents[kk] = ents.get(kk, 0) + vv
+        return out, n + n2, ents
     if len(text) >= 40:
         dec = _decode_b64_text(text)
         if dec is not None:  # base64-wrapped text (scanned forms, attachments): sanitise inside, re-wrap
@@ -460,6 +498,11 @@ def sanitize_token_string(s, eng, psn=None):
     for sp in spans:
         for i in range(sp.start, sp.end):
             if spaced[i] not in " ":
+                pieces[i] = "\x00"
+        changed = True
+    for a, b in det.oov_proper_runs(spaced, getattr(eng, "safe_file_tokens", ())):
+        for i in range(a, b):
+            if spaced[i] != " ":
                 pieces[i] = "\x00"
         changed = True
     out = "".join(pieces)

@@ -90,6 +90,8 @@ python3 tests/test_isolation.py          # pipeline never imports dev_eval/ nor 
 python3 tests/test_stigma.py             # Stigma Shield: trilingual detector, honey values, planner, self-check counts
 python3 tests/test_improve.py            # self-improvement loop building blocks
 python3 tests/test_hardclasses.py        # adversarial leak classes: spelled ages, holidays, wrapped phones, PAN, aliases
+python3 tests/test_structural.py         # v1.9: hidden characters, odd phones, deep FHIR, names in keys/headers/file names, bad files
+python3 tests/test_gemini_cases.py       # v1.9: the Gemini cases checker and the --gemini-cases loop
 bash dev_eval/demo_stigma.sh             # 30-second before/after demo of the Stigma Shield (invented notes)
 bash tests/test_offline.sh               # pipeline under a no-network namespace
 python3 scripts/train_namefind.py        # optional: rebuilds raksha/namefind_weights.json byte-identically
@@ -143,6 +145,8 @@ dev_eval/               DEVELOPMENT EVALUATION ONLY - never imported or run by m
   validate_output.py    minimal mirror of the output contract
   improve.py            self-improvement loop for the name model (synthetic data only, promote-if-no-regression)
   IMPROVE_LOG.md        its changelog
+  GEMINI_PROMPT.md, gemini_cases.py, gemini_cases_example.jsonl
+                        prompt for Gemini-written test cases, their checker/runner (--gemini-cases), an example
   demo_stigma.sh, demo_stigma/   30-second Stigma Shield demo on two invented notes
 tests/
   acceptance_extended.py  Hindi/Hinglish linkage, same-name non-merge, C/O traps, FHIR, PII filename,
@@ -156,6 +160,10 @@ tests/
   test_stigma.py          Stigma Shield detector, honey values, planner escalation, end-to-end counts, determinism
   test_improve.py         improve-loop held-out generator (names absent from every shipped list)
   test_namefind.py        unseen-name finder on invented names; drugs, complaints, places not redacted
+  test_structural.py      invisible / look-alike / %- and &#-hidden text, separated and spelled phones, data URIs,
+                          deep FHIR fields, eponym surnames, names in JSON keys / CSV headers / file names,
+                          quarantine of NaN, duplicate-key, corrupt-byte and JSON-in-.csv files
+  test_gemini_cases.py    Gemini cases file: validation, skipped lines, split, name tokens, end-to-end run
   test_offline.sh         runs the pipeline under `unshare -rn` (no network namespace) or a socket guard
 ```
 
@@ -399,6 +407,27 @@ kept on purpose. The remaining variant leak is a Hinglish spelling of 64 ("chaus
 number-word list. In every set, different people with the same given name stayed apart. The practice-set
 numbers, held-out name and retention numbers, peak RSS (169 MB) and determinism did not change.
 
+Opus "hardest" round (v1.9). A third outside test kit with its own scorer (0–100 final score, penalties
+for unique direct leaks and planted canary words) was reproduced and fixed with general rules only:
+
+| Opus set | v1.8 final / penalties | v1.9 final / penalties |
+|---|---:|---:|
+| A | 51.6 / −40 (156 unique leaks, 5 canaries) | 94.4 / −3 |
+| B | 52.1 / −40 | 90.1 / −8 |
+
+The fixes: invisible characters, look-alike letters inside a word, %-encoding and `&#..;` entities are
+undone before detection; phones with one repeated separator (`98.11.20.44.67`, `98 - 11 ...`), a
+`0/91/091` prefix, or written in number words; text inside `data:` URIs and deep FHIR fields (URLs,
+contained RelatedPerson); unknown two-word names in JSON keys, CSV headers, file and folder names;
+surnames that are also eponyms (Bell, Bharti) next to a first name, while "Bell's palsy" stays;
+role cues (caller, attendant, collected by); SNOMED/LOINC/ICD codes, batch/lot numbers and log
+timestamps kept; slash dates in OPD visit fields shifted; and malformed files (invalid bytes,
+NaN/Infinity, duplicate JSON keys, JSON saved as .csv) quarantined. The remaining Opus penalties are
+the scorer gluing a CSV date to the next amount into a "number" that matches an MRN digit string.
+A fresh trap generator (outside the repo) scored once: 21 of 30 values leaked, 6 of 6 canaries and
+0 of 4 bad files quarantined before; 0 of 30, 0 of 6 and 4 of 4 after, with 34 of 34 kept values kept.
+Practice set, outside sets A/B, determinism, time and memory are unchanged.
+
 ## Keep improving it
 
 The name model can be retrained and checked on a laptop with no network and no packages:
@@ -423,6 +452,38 @@ medical values and linkage. At least one of them must improve. Every round is ap
 `dev_eval/IMPROVE_LOG.md`, and the loop never trains on real data. So far no candidate has been promoted:
 the candidates have higher token F1 but lower name recall at the detector's current thresholds,
 so the gate keeps the shipped weights.
+
+## Keep improving it with Gemini
+
+You can ask Gemini 4 Neon to *write tricky test records*, and let Raksha learn from them. Gemini is only
+used by you, in your browser, to make a text file. Raksha never calls Gemini or the internet, so the
+hackathon "no AI model, offline" rule still holds.
+
+1. Open `dev_eval/GEMINI_PROMPT.md`, copy the prompt inside the box, and paste it into Gemini.
+2. Save Gemini's whole answer as `cases.jsonl` in the repo folder. Each line is one invented record:
+   the text, the personal data in it (`pii`), and the medical words that must stay (`must_keep`).
+   `dev_eval/gemini_cases_example.jsonl` shows what a good file looks like.
+3. See how Raksha does on them today:
+   ```bash
+   python3 -m dev_eval.gemini_cases cases.jsonl          # only checks the file
+   python3 -m dev_eval.gemini_cases cases.jsonl --run    # also runs Raksha and lists every leak
+   ```
+   Broken lines (not JSON, a `pii` text that is not really in the record, an unknown type, ...) are
+   skipped with the line number and the reason; the rest still runs. Fix or delete them if you like.
+4. Let the improve loop learn from them:
+   ```bash
+   python3 -m dev_eval.improve --rounds 5 --kit ../kit --gemini-cases cases.jsonl
+   ```
+   The cases are split in two halves (always the same split for the same file). The names in one half
+   become extra training words for the name model; the other half is kept aside as a test it has
+   never seen. The new model replaces the old one only if practice leaks stay 0 and nothing gets worse,
+   including leaks and kept medical values on that held-out half.
+5. Run the tests again (`python3 tests/test_namefind.py` etc.) and commit if something was promoted.
+
+What it can and cannot fix: retraining only teaches the *name* model. If `--run` shows a leaked phone,
+ID, date or address, that is a missing rule in `raksha/detect.py`; add a general rule (never the exact
+value), add an invented example to `tests/test_structural.py`, and check the practice set still has
+0 leaks. Never put real patient data in the cases file.
 
 ## Known limitations
 
@@ -456,6 +517,12 @@ so the gate keeps the shipped weights.
   A number-word spelling missing from the built-in English/Hindi/Hinglish list ("chausath") is missed.
   So is a spelled age written as a duration ("for sixty years").
 * Formats beyond CSV/TSV/JSON/FHIR/text (NDJSON/JSON Lines, PDF, images, XML, HL7v2) are quarantined.
+* Quarantine policy (v1.9): files with invalid bytes, JSON with NaN/Infinity or duplicate keys, and JSON
+  saved under a .csv name are quarantined. The official spec accepts either quarantine or a safe export
+  for such files; the Opus kit requires quarantine, so we quarantine (valid under both). On the practice
+  set this moves `corrupt_bytes_note.txt` and `mislabeled_export.csv` from exported to quarantined.
+* Phones with mixed separators (`98.11-20 44`) or slashes are missed; an unknown first-name + surname
+  pair in free text with no cue, no Title Case pair and no gazetteer hit can still slip through.
 
 ## Design notes and credits
 

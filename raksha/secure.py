@@ -120,6 +120,9 @@ def error_category(exc):
         "EmptyFile": "empty file",
         "GarbledText": "undecodable text encoding",
         "UnsafeEntry": "unsafe filesystem entry",
+        "CorruptBytes": "corrupt bytes (damaged encoding)",
+        "NonStandardJson": "non-standard JSON (NaN/Infinity or duplicate keys)",
+        "ContentMismatch": "content does not match extension",
     }
     return table.get(name, "processing error")
 

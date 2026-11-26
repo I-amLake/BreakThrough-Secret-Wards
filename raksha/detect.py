@@ -24,6 +24,17 @@ PRIORITY = {"EVENT": 69, "MED": 100, "DOCTOR": 95, "EMAIL": 90, "ABHA": 89, "AAD
 PII_KINDS = {"EMAIL", "ABHA", "AADHAAR", "PAN", "PHONE", "MRN", "INSURANCE", "ID", "PIN", "ADDRESS", "NAME", "DOB"}
 
 
+# medical eponyms that are also ordinary family names ("Bell's palsy" vs "Durga Bell")
+_EPONYM_SURNAMES = {"bell", "wilson", "graves", "murphy", "parkinson", "addison", "cushing", "hodgkin", "crohn", "ringer",
+                    "foley", "huntington", "hashimoto", "kernig", "romberg", "virchow", "lachman", "phalen", "tinel",
+                    "down", "paget", "raynaud", "horner", "bartter", "conn", "barrett", "baker", "colles", "pott", "still"}
+
+
+_MONTHS = {"january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november",
+           "december", "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "sept", "oct", "nov", "dec", "monday", "tuesday",
+           "wednesday", "thursday", "friday", "saturday", "sunday"}
+
+
 class Span:
     __slots__ = ("start", "end", "kind", "text", "role", "meta")
 
@@ -50,7 +61,14 @@ SHIELD_RX = [
     re.compile(r"\b(?:HR|PR|RR|SpO2|SPO2|Temp|T|Pulse|RBS|FBS|PPBS|HbA1c|Hb|TLC|Plt|Platelets?|Cr|Creat|eGFR|TSH|Na|K|INR|ESR|CRP|Wt|Ht|BMI|GCS)\s*[:=-]?\s*\d+(?:[.,]\d+)*", re.I),
     re.compile(r"\b[xX×]\s?\d+\s?(?:days?|d|wks?|weeks?|months?|mths?|yrs?|years?|दिन)\b"),  # x 5 days
     re.compile(r"\b\d+(?:,\d{2})*,\d{3}\b"),                                                # 1,50,000
+    # terminology codes and manufacturing numbers that only look like IDs: "SNOMED CT 234567890127",
+    # "LOINC 2345-7", "Batch ABC1234567", "Lot no. 22B1045"
+    re.compile(r"(?i)\b(?:SNOMED(?:[ \t-]?CT)?|LOINC|ICD-?(?:9|10|11)(?:-CM)?|CPT|RxNorm|HSN|ATC)(?:[ \t]+(?:code|id|concept))?[ \t]*[:#]?[ \t]*[0-9][0-9A-Z.\-]{2,19}\b"),
+    re.compile(r"(?i)\b(?:batch|lot)(?:[ \t]*(?:no\.?|number|#))?[ \t]*[:#]?[ \t]*(?=[A-Z0-9\-/]*\d)[A-Z0-9][A-Z0-9\-/]{3,19}\b"),
 ]
+# a 14-digit compact timestamp (yyyymmddhhmmss) after a log / time word is a timestamp, not an ABHA number
+RX_TIMESTAMP14 = re.compile(r"(?i)(?:\b(?:log|logged|ts|timestamp|time|at|created|updated|synced?)[ \t]*[:=#]?[ \t]*)"
+                            r"((?:19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])(?:[01]\d|2[0-3])[0-5]\d[0-5]\d)(?!\d)")
 
 
 # ------------------------------------------------------------------ Stage B: regex PII
@@ -73,6 +91,50 @@ RX_PHONE = re.compile(
     + _NB + r"(?:(?:\+|00)\s?91[\s.-]?|91)?[6-9]\d{9}(?![\w])|"
     + _NB + r"\(?0\d{2,4}\)?[\s-]\d{6,8}(?![\w])|"
     + r"(?<![\w])[6-9]\d[xX*]{6}\d{2}(?![\w])")
+# a 10-digit mobile written with ONE repeated separator in any grouping: "7 2 0 2 4 3 2 3 6 7",
+# "7256.325.533", "091-732-038-7333", "98-765-43210". Total digits are checked in code.
+RX_PHONE_SEP = re.compile(r"(?<![\w.+\-])(?:\+?0{0,2}91([ .\-])|0([ .\-])?)?([6-9]\d{0,4})( [.\-] |[ .\-])\d{1,5}(?:\4\d{1,5}){0,8}(?![\w]|[.\-]\d)")
+# spelled single digits (English / Hinglish / Devanagari Hindi), for numbers read out digit by digit
+DIGIT_WORDS = {}
+for _i, _ws in enumerate((("zero", "shunya", "sunya", "\u0936\u0942\u0928\u094d\u092f"), ("one", "ek", "\u090f\u0915"),
+                          ("two", "do", "\u0926\u094b"), ("three", "teen", "tin", "\u0924\u0940\u0928"),
+                          ("four", "char", "chaar", "\u091a\u093e\u0930"),
+                          ("five", "paanch", "panch", "paach", "\u092a\u093e\u0902\u091a", "\u092a\u093e\u0901\u091a"),
+                          ("six", "chhe", "chhah", "chheh", "che", "chah", "\u091b\u0939", "\u091b\u0903", "\u091b\u0947"),
+                          ("seven", "saat", "sat", "\u0938\u093e\u0924"), ("eight", "aath", "ath", "\u0906\u0920"),
+                          ("nine", "nau", "nao", "\u0928\u094c"))):
+    for _w in _ws:
+        DIGIT_WORDS[_w] = str(_i)
+_RX_DIGIT_TOK = re.compile(r"[A-Za-z]+|[\u0900-\u097F]+|\d+")
+
+
+def spelled_numbers(norm, min_digits=8):
+    """[(start, end, digits)] for runs of digit words / digit groups read out one by one
+    ("nau paanch ek char ...", "छह एक नौ ..."), at least min_digits digits and >= 4 spelled words."""
+    out = []
+    run, last_end, words = [], None, 0
+    def flush():
+        if run:
+            dg = "".join(d for _, _, d in run)
+            if len(dg) >= min_digits and words >= 4:
+                out.append((run[0][0], run[-1][1], dg))
+    for m in _RX_DIGIT_TOK.finditer(norm):
+        t = m.group(0)
+        d = t if t.isdigit() else DIGIT_WORDS.get(t.lower())
+        gap = norm[last_end:m.start()] if last_end is not None else ""
+        if d is None or (run and not re.fullmatch(r"[ \t,\-.]{1,3}", gap)):
+            flush()
+            run, words = [], 0
+            if d is None:
+                last_end = m.end()
+                continue
+        run.append((m.start(), m.end(), d))
+        words += 0 if t.isdigit() else 1
+        last_end = m.end()
+    flush()
+    return out
+
+
 _ID_LABEL = (r"(?:uhid|u\.h\.i\.d|mrn|m\.?r\.?\s?no|mr\s?number|ip\.?\s?no|op\.?\s?no|ipd\s?no|opd\s?no|reg(?:istration|n)?\.?\s?no|"
              r"cr\.?\s?no|patient\s?id|pt\.?\s?id|pid|hosp(?:ital)?\.?\s?no|case\s?no|file\s?no|lab\s?no|sample\s?id|"
              r"यूएचआईडी|पंजीकरण\s?(?:संख्या|नं)?)")
@@ -256,10 +318,16 @@ RX_ALIAS_POST = re.compile(r"(?i)\s+(?:(?:naam|name)\s+se\s+)?(?:bulate|bulaate|
                            r"|\s+(?:ke|ki)\s+naam\s+se(?:\s+jaan|\s+bul|\s+mash)|\s+(?:नाम\s+से\s+)?(?:बुलाते|पुकारते|कहते)\s+(?:हैं|है|थे)")
 RX_REL_POST = re.compile(r"(?i)\s+(?:ki|ke|ka|की|के|का)\s+(wife|patni|biwi|pati|husband|beta|beti|bete|son|daughter|father|mother|maa|papa|bahu|पत्नी|पति|बेटा|बेटी|बेटे|पिता|माता|माँ|बहू)(?![\w\u0900-\u097F])")
 RX_DOCTOR = re.compile(r"(?<![\w])(?:Dr|DR|dr|Doctor|Prof)\.?\s*(?=[A-Z\u0900-\u097F])|(?<![\w\u0900-\u097F])(?:डॉक्टर|डॉ|डा)(?![\u0900-\u097F])\.?\s*")
-RX_BY_CUE = re.compile(r"(?i)(?<![\w])(?:called|witnessed|raised|brought|accompanied|informed|signed|reported|requested|visited|escorted|consented|filled|registered|attended|countersigned)\s+by\s*:?\s*(?=[A-Z\u0900-\u097F])")
+RX_BY_CUE = re.compile(r"(?i)(?<![\w])(?:called|witnessed|raised|brought|accompanied|informed|signed|reported|requested|visited|escorted|consented|filled|registered|attended|countersigned|"
+                       r"verified|approved|authori[sz]ed|collected|received|entered|typed|dictated|transcribed|prepared|handed\s+over|picked\s+up|claimed|identified)\s+by\s*:?\s*(?=[A-Z\u0900-\u097F])")
+# a role noun naming a person who is not staff: "caller Saverin Ekhollow", "informant: Rama Devi"
+RX_ROLE_BEFORE = re.compile(r"(?i)(?<![\w])(?:caller|informant|attendant|visitor|guardian|caretaker|care\s?giver|complainant|requester|requestor|"
+                            r"bystander|escort|nominee|next\s+of\s+kin|contact\s+person|applicant|claimant|beneficiary|policy\s?holder|insured)"
+                            r"\s*(?:name)?\s*[:\-]?\s*(?=[A-Z])")
+_RX_CAP_WORD = re.compile(r"([A-Z][a-z]{1,20}|[A-Z]{2,20})(?![\w'\u2019])")
 RX_ROLE_AFTER = re.compile(r"(?<![\w.])((?:[A-Z][a-z]+ ){1,2}[A-Z][a-z]+)(?=\s*\(\s*(?:attendant|visitor|relative|guardian|caretaker|bystander|wife|husband|son|daughter|mother|father|brother|sister|patient|pt|informant|witness)\b|\s*,?\s*(?:mob(?:ile)?|ph(?:one)?|contact|tel|cell)\.?\s*(?:no\.?)?\s*[:\-]?\s*(?:\+?91[\s-]?)?[6-9]\d)")
 RX_BEFORE_REL = re.compile(r"(?<![\w.])((?:[A-Z][a-z]+ ){0,2}[A-Z][a-z]+),?\s+[SWD]\s?/\s?[oO]\.?\s+(?=[A-Z])")
-RX_PATIENT_CUE = re.compile(r"(?i)(?<![\w])(?:report\s+(?:of|for)|pt\.?|patient(?:\s+name)?|name|naam|mareez|marij|मरीज़?|रोगी|नाम)\s*(?:is|:|-|–|=)?\s*(?=[A-Za-z\u0900-\u097F])")
+RX_PATIENT_CUE = re.compile(r"(?i)(?<![\w])(?:report\s+(?:of|for)|pt\.?|patient(?:['\u2019]s)?(?:\s+name)?|name|naam|mareez|marij|मरीज़?|रोगी|नाम)\s*(?:is|:|-|–|=)?\s*(?=[A-Za-z\u0900-\u097F])")
 _COMPLAINT_HINT = re.compile(r"(?i)^\s*[:\-]?\s*(?:\d|fever|pain|cough|cold|vomit|loose|burning|breath|headache|abd|chest|weakness|giddiness|swelling|bleeding|itching|rash|sob|bukhar|dard|khansi|ulti|chakkar|बुखार|दर्द|खांसी|उल्टी|सांस|चक्कर|pet|sir|severe|mild|high|low|h/o|known|k/c/o)")
 
 
@@ -650,11 +718,96 @@ class Detector:
             if any(a < sp.start and st < b for a, b in occ if (a, b) != (sp.start, sp.end)):
                 continue
             f = fold(devanagari_to_latin(w)) if has_devanagari(w) else fold(w)
-            if f not in self.lex.names_f or (self.lex.is_stop(w) and not has_devanagari(w)) or w.lower() in self.lex.honor_pre or (not has_devanagari(w) and self.lex.is_place(w)):
+            first_is_sur = self.lex.is_surname_only(sp.text.split()[0]) if sp.text.split() else False
+            if f not in self.lex.names_f or (self.lex.is_stop(w) and not has_devanagari(w)) or w.lower() in self.lex.honor_pre or \
+                    (not has_devanagari(w) and self.lex.is_place(w) and not (first_is_sur and w.lower() in self.lex.first)):
                 continue
             if has_devanagari(w) and w in _DEVA_FUNC:
                 continue
             sp.start, sp.text = st, text[st:sp.end]
+        return self._extend_surname_right(text, chosen)
+
+    _RX_NEXT_CAP = re.compile(r"[ \t]([A-Z][a-z]{2,}|[A-Z]{3,})(?![\w'\u2019])")
+    _RX_EPONYM_TAIL = re.compile(r"(?i)\s*(?:['\u2019]s?)?\s*(?:disease|syndrome|palsy|sign|test|law|tube|catheter|score|lactate|"
+                                 r"solution|phenomenon|fracture|ulcer|reflex|manoeuvre|maneuver|criteria|classification|scale|"
+                                 r"triad|node|lymphoma|ophthalmopathy|thyroiditis|tumou?r)\b")
+    _RX_HINGLISH_PRED = re.compile(r"(?i)\s+(?:hua|hui|huye|hue|huyi|kiya|kiye|kiyaa|karaya|karwaya|kar|karo|ho|hai|hain|tha|thi|the)\b")
+
+    def _cap_run(self, text, pos, maxn=3, allow_upper=True):
+        """1-3 capitalised words at pos that are not vocabulary (a person after an explicit person cue,
+        even when the name is unlike any name the gazetteer or the model knows)."""
+        lex = self.lex
+        st = en = None
+        n = 0
+        while n < maxn:
+            m = _RX_CAP_WORD.match(text, pos)
+            if not m:
+                break
+            w = m.group(1)
+            if (w.isupper() and not allow_upper) or \
+                    lex.is_stop(w) or lex.is_common(w) or \
+                    (lex.is_medical(w) and w.lower() not in lex.ambiguous and not (st is not None and w.lower() in _EPONYM_SURNAMES)) or \
+                    w.lower() in lex.honor_pre or classify_label(w) is not None:
+                break
+            if st is not None and w.lower() in _EPONYM_SURNAMES and self._RX_EPONYM_TAIL.match(text[m.end(1):m.end(1) + 30]):
+                break
+            st = m.start(1) if st is None else st
+            en = m.end(1)
+            n += 1
+            nxt = re.match(r"[ \t]+", text[en:])
+            if not nxt:
+                break
+            pos = en + nxt.end()
+        return (st, en) if st is not None else None
+
+    def oov_proper_runs(self, text, extra_known=()):
+        """Runs of >= 2 capitalised words where NO word is vocabulary (schema words, English / Hinglish
+        common words, medical terms, places, honorifics): in a structural string (JSON key, CSV header,
+        file or folder name) such a run is a proper name, most likely a person, even one no gazetteer has."""
+        lex = self.lex
+        out = []
+        run = []
+        for m in re.finditer(r"[A-Za-z]+", text):
+            w = m.group(0)
+            gap = text[run[-1][1]:m.start()] if run else ""
+            known = (not re.fullmatch(r"[A-Z][a-z]{2,}", w)) or lex.is_stop(w) or lex.is_common(w) or lex.is_medical(w) or \
+                lex.is_place(w) or w.lower() in lex.honor_pre or classify_label(w) is not None or w.lower() in extra_known or \
+                w.lower() in _MONTHS
+            if known or (run and not re.fullmatch(r"[ \t]{1,2}", gap)):
+                if len(run) >= 2:
+                    out.append((run[0][0], run[-1][1]))
+                run = []
+            if not known:
+                run.append((m.start(), m.end()))
+        if len(run) >= 2:
+            out.append((run[0][0], run[-1][1]))
+        return out
+
+    def _extend_surname_right(self, text, chosen):
+        """"Durga [Bell]", "Raghav [Bharti]": a capitalised word right after a detected person name that is a
+        known surname but also a medical eponym or a Hinglish word joins the name, unless what follows makes
+        it the eponym ("Bell's palsy", "Wilson disease") or a predicate ("bharti hua")."""
+        occ = [(sp.start, sp.end) for sp in chosen]
+        for sp in chosen:
+            if sp.kind != "NAME" or not sp.text.strip():
+                continue
+            m = self._RX_NEXT_CAP.match(text, sp.end)
+            if not m:
+                continue
+            w = m.group(1)
+            wl = w.lower()
+            last = sp.text.split()[-1]
+            if w.isupper() != last.isupper():
+                continue
+            if not (wl in _EPONYM_SURNAMES or wl in self.lex.ambiguous or (self.lex.is_name_latin(w) and self.lex.is_common(w))):
+                continue
+            tail = text[m.end():m.end() + 30]
+            if self._RX_EPONYM_TAIL.match(tail) or self._RX_HINGLISH_PRED.match(tail):
+                continue
+            if any(a < m.end(1) and m.start(1) < b for a, b in occ if (a, b) != (sp.start, sp.end)):
+                continue
+            sp.end = m.end(1)
+            sp.text = text[sp.start:sp.end]
         return chosen
 
     def _pre_pin_places(self, text, spans, pins):
@@ -770,6 +923,8 @@ class Detector:
         for rx in SHIELD_RX:
             for m in rx.finditer(norm):
                 spans.append(Span(m.start(), m.end(), "MED", m.group(0)))
+        for m in RX_TIMESTAMP14.finditer(norm):
+            spans.append(Span(m.start(1), m.end(1), "MED", m.group(1)))
         # B. regex identifiers
         for m in RX_ABHA_ADDR.finditer(norm):
             spans.append(Span(m.start(), m.end(), "ABHA", m.group(0)))
@@ -795,6 +950,16 @@ class Detector:
             spans.append(Span(m.start(1), m.end(1), "ID", m.group(1).upper(), meta={"labelled": True}))
         for m in RX_PHONE.finditer(norm):
             spans.append(Span(m.start(), m.end(), "PHONE", norm_phone(m.group(0))))
+        for m in RX_PHONE_SEP.finditer(norm):
+            d = digits_only(m.group(0))
+            core10 = d[-10:]
+            if len(d) in (10, 11, 12, 13) and core10[0] in "6789" and (len(d) == 10 or d[:-10] in ("0", "91", "091", "0091")):
+                # a dosing-grid shield ("1-0-1") inside a whole 10-digit number is part of the number
+                spans = [x for x in spans if not (x.kind == "MED" and m.start() <= x.start and x.end <= m.end())]
+                spans.append(Span(m.start(), m.end(), "PHONE", core10))
+        for a, b, dg in spelled_numbers(norm):
+            kind = "PHONE" if len(dg) >= 10 and dg[-10] in "6789" else "ID"
+            spans.append(Span(a, b, kind, dg[-10:] if kind == "PHONE" else dg))
         spans.extend(self._wrapped_ids(norm))
         for m in RX_LABELED_ID.finditer(norm):
             val = m.group(2).rstrip(".-")
@@ -1174,6 +1339,11 @@ class Detector:
         # patient cues
         for m in RX_PATIENT_CUE.finditer(text):
             r = self._collect_forward(text, toks, m.end(), 3, True)
+            if not r and re.search(r"[:=\-–]", m.group(0)):
+                # "Patient: Qorvantha Belisk": a labelled value of >= 2 capitalised non-vocabulary words
+                r2 = self._cap_run(text, m.end())
+                if r2 and " " in text[r2[0]:r2[1]].strip():
+                    r = r2
             before = text[max(0, m.start() - 15):m.start()].lower()
             if r and re.search(r"father|husband|mother|guardian|spouse|wife|pita|pati|पिता|पति|माता|पत्नी|अभिभावक", before):
                 continue
@@ -1199,6 +1369,14 @@ class Detector:
                 w = text[r[0]:r[1]]
                 if all(t[:1].isupper() or has_devanagari(t) for t in w.split()):
                     out.append(Span(r[0], r[1], "NAME", w, role="cued"))
+            else:
+                r = self._cap_run(text, m.end())
+                if r:
+                    out.append(Span(r[0], r[1], "NAME", text[r[0]:r[1]], role="cued"))
+        for m in RX_ROLE_BEFORE.finditer(text):
+            r = self._cap_run(text, m.end(), allow_upper=bool(re.search(r"[:\-]", m.group(0))))
+            if r:
+                out.append(Span(r[0], r[1], "NAME", text[r[0]:r[1]], role="relative"))
         for m in RX_BEFORE_REL.finditer(text):  # "Gonavati, W/o Kelvansh": the subject of a relation marker is a person
             w = m.group(1)
             if all(self._tok_ok_latin(t, True) and not lex.is_stop(t) and (not lex.is_medical(t.lower()) or t.lower() in lex.ambiguous)

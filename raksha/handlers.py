@@ -384,6 +384,8 @@ def csv_rewrite(doc, eng):
 def _header_has_pii(h, eng):
     spaced = re.sub(r"[_]+", " ", h)
     lex = eng.detector.lex
+    if eng.detector.oov_proper_runs(re.sub(r"[_\-]+", " ", h), getattr(eng, "safe_file_tokens", ())):
+        return True
     for s in eng.detector.detect(spaced):
         if s.kind not in PII_KINDS:
             continue
@@ -627,6 +629,8 @@ def _rewrite_json(node, ctx, eng, slot, parent=None, label="", order=None, depth
 
 
 def _pathlike(v):
+    if re.fullmatch(r"\s*\d{1,4}/\d{1,2}/\d{1,4}(?:[ T]\d{1,2}:\d{2}(?::\d{2})?)?\s*", v):
+        return False   # "05/01/2026" is a date, not a path
     return len(v) > 6 and " " not in v.strip() and ("\\" in v or v.count("/") >= 2) and not v.startswith("http")
 
 
@@ -711,6 +715,8 @@ def json_rewrite(doc, eng):
 
 def _key_needs_clean(k, eng):
     s = str(k)
+    if eng.detector.oov_proper_runs(re.sub(r"[_\-]+", " ", s), getattr(eng, "safe_file_tokens", ())):
+        return True
     if re.search(r"\d{5,}", s) or any(core.opaque_id(t) for t in re.findall(r"[A-Za-z0-9]{8,}", s)):
         return True
     if classify_label(s) is not None and not re.search(r"\d{4,}", s):
@@ -963,10 +969,9 @@ def fhir_rewrite(doc, eng):
                         eng.count_ids(1, "RELATIVE_NAME")
                 r["contact"] = newc
         elif rt == "RelatedPerson":
-            for k in ("name", "telecom", "address", "identifier", "photo"):
-                if k in r:
-                    del r[k]
-                    eng.count_ids(1, "RELATIVE_NAME")
+            _strip_related(r, eng)
+    for r in _resources(b):
+        _strip_contained(r, eng)
     refs = set()
     if b.get("resourceType") == "Bundle":
         for e in b.get("entry", []):
@@ -980,6 +985,30 @@ def fhir_rewrite(doc, eng):
     b = _fhir_walk(b, ctx, eng, None)
     eng.current_patient_refs = set()
     return json.dumps(b, ensure_ascii=False, indent=2) + "\n"
+
+
+def _strip_related(r, eng):
+    for k in ("name", "telecom", "address", "identifier", "photo"):
+        if k in r:
+            del r[k]
+            eng.count_ids(1, "RELATIVE_NAME")
+
+
+def _strip_contained(node, eng, depth=0):
+    """Contained resources ("contained": [RelatedPerson ...]) and nested ones get the same treatment as
+    top-level ones: a contained RelatedPerson / Person / Patient loses its direct identifiers."""
+    if depth > 60:
+        return
+    if isinstance(node, dict):
+        for c in node.get("contained", []) or []:
+            if isinstance(c, dict) and c.get("resourceType") in ("RelatedPerson", "Person", "Patient"):
+                _strip_related(c, eng)
+        for v in node.values():
+            if isinstance(v, (dict, list)):
+                _strip_contained(v, eng, depth + 1)
+    elif isinstance(node, list):
+        for v in node:
+            _strip_contained(v, eng, depth + 1)
 
 
 def _fhir_walk(node, ctx, eng, key, depth=0, parent=None):
@@ -1018,6 +1047,13 @@ def _fhir_walk(node, ctx, eng, key, depth=0, parent=None):
         return [_fhir_walk(v, ctx, eng, key, depth + 1, parent) for v in node]
     if isinstance(node, str):
         if key in _FHIR_REF_KEYS:
+            return _fhir_ref_clean(node, eng)
+        if key in ("url", "system", "source", "profile") and node.startswith("data:"):
+            new, n, ents = render_value(node, ctx)
+            eng.add_entities(ents, n)
+            return new
+        if key in ("url", "system", "profile"):
+            # a namespace URL is kept, but a path segment carrying a person ("…/mrn/imran-siddiqui") is keyed
             return _fhir_ref_clean(node, eng)
         if key in FHIR_KEEP_KEYS and key not in ("value",):
             return node

@@ -4,6 +4,7 @@
     python -m dev_eval.improve                     # one round, seed picked from the changelog
     python -m dev_eval.improve --rounds 5 --kit /path/to/kit   # also gate on the kit's check_dev
     python -m dev_eval.improve --extra-words my_false_alarms.txt      # teach it words it over-redacts
+    python -m dev_eval.improve --gemini-cases cases.jsonl             # learn from / test on Gemini-written cases
 
 Each round, fully offline and stdlib-only:
   1. trains a CANDIDATE char n-gram logistic regression on freshly generated synthetic tokens
@@ -14,7 +15,8 @@ Each round, fully offline and stdlib-only:
   3. runs the whole pipeline (main.py) with the current weights and with the candidate weights in a
      temporary copy of the repo, and scores: held-out token F1, name recall, non-PII token
      retention, and dev_eval/gen_data.py end-to-end leaks / clinical / linkage; optionally the
-     kit's check_dev (leaks, medical values kept, linkage);
+     kit's check_dev (leaks, medical values kept, linkage); with --gemini-cases, the held-out half of
+     the cases file (dev_eval/gemini_cases.py) is a further leak / kept-values test;
   4. PROMOTES the candidate only if nothing regresses, dev leaks stay 0 and at least one metric
      improves; otherwise keeps the current weights. Every round is appended to
      dev_eval/IMPROVE_LOG.md. Nothing real is ever used for training.
@@ -179,8 +181,8 @@ def token_f1(bias, weights, val):
     return T.evaluate(bias, weights, val)["f1"]
 
 
-HIGHER = ("token_f1", "name_recall", "retention", "e2e_clinical", "e2e_link_f05", "dev_medical", "dev_link_f05")
-LOWER = ("e2e_leak_rate", "dev_leaks")
+HIGHER = ("token_f1", "name_recall", "retention", "e2e_clinical", "e2e_link_f05", "dev_medical", "dev_link_f05", "gemini_kept")
+LOWER = ("e2e_leak_rate", "dev_leaks", "gemini_leaks")
 
 
 def _extra(path, label):
@@ -190,7 +192,7 @@ def _extra(path, label):
         return [(w.strip(), label) for w in fh if w.strip() and not w.startswith("#")]
 
 
-def one_round(seed, kit, work, extra=()):
+def one_round(seed, kit, work, extra=(), gemini_held=None):
     import train_namefind as T
     rnd = random.Random(seed)
     hp = {"epochs": rnd.randint(16, 22), "lr": round(rnd.uniform(0.10, 0.14), 3), "min_df": rnd.choice((3, 3, 4))}
@@ -219,6 +221,10 @@ def one_round(seed, kit, work, extra=()):
         r.update(e2e(repo, work, seed % 1000 + 1))
         if kit:
             r.update(check_dev(repo, kit, work))
+        if gemini_held:
+            from dev_eval.gemini_cases import run_cases
+            g = run_cases(repo, gemini_held, work)
+            r.update({"gemini_leaks": len(g["leaks"]), "gemini_kept": g["kept"]})
         m[k] = r
     c, n = m["current"], m["candidate"]
     regress = [x for x in HIGHER if x in n and n[x] < c[x]] + [x for x in LOWER if x in n and n[x] > c[x]]
@@ -264,13 +270,27 @@ def main():
     ap.add_argument("--kit", default=None, help="kit folder with check_dev.py and dev/input (optional gate)")
     ap.add_argument("--extra-names", default=None, help="file of INVENTED name tokens to add as positives (one per line)")
     ap.add_argument("--extra-words", default=None, help="file of ordinary words the model wrongly scores as names (negatives)")
+    ap.add_argument("--gemini-cases", default=None,
+                    help="JSON Lines file of cases written with dev_eval/GEMINI_PROMPT.md: half trains, half is a held-out leak test")
     ap.add_argument("--no-log", action="store_true")
     a = ap.parse_args()
     seed = a.seed if a.seed is not None else next_seed()
+    g_train, g_held = [], None
+    if a.gemini_cases:
+        from dev_eval.gemini_cases import load_cases, name_training_tokens, split
+        cases, problems = load_cases(a.gemini_cases)
+        for p in problems:
+            print("gemini-cases: skipped " + p)
+        if not cases:
+            raise SystemExit("gemini-cases: no valid case in %s (see the lines above)" % a.gemini_cases)
+        train, g_held = split(cases)
+        g_train = name_training_tokens(train)
+        print("gemini-cases: %d valid (%d train -> %d tokens, %d held-out), %d lines skipped"
+              % (len(cases), len(train), len(g_train), len(g_held), len(problems)))
     for i in range(a.rounds):
         work = tempfile.mkdtemp(prefix="raksha_improve_")
         try:
-            res = one_round(seed + i, a.kit, work, _extra(a.extra_names, 1) + _extra(a.extra_words, 0))
+            res = one_round(seed + i, a.kit, work, _extra(a.extra_names, 1) + _extra(a.extra_words, 0) + g_train, g_held)
         finally:
             shutil.rmtree(work, ignore_errors=True)
         if not a.no_log:

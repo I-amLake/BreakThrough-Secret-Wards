@@ -28,6 +28,20 @@ class FhirInvalid(Exception):
     pass
 
 
+class CorruptBytes(Exception):
+    """Bytes that are neither valid UTF-8 nor a clean legacy encoding (embedded BOMs, NULs, mixed
+    UTF-8 + broken sequences): the file is damaged, so it is quarantined instead of half-cleaned."""
+
+
+class NonStandardJson(Exception):
+    """JSON that only a lenient parser accepts (NaN / Infinity) or with duplicate keys (which value
+    the next reader keeps is undefined): quarantined rather than guessed at."""
+
+
+class ContentMismatch(Exception):
+    """A file whose content is another format than its extension says (JSON behind .csv)."""
+
+
 class UnsafeEntry(Exception):
     """A symlink or non-regular file (FIFO, device, socket) inside the input: never followed or opened."""
 
@@ -94,10 +108,111 @@ def read_nofollow(path):
 
 
 def decode(data):
-    """Decode bytes to str (NFC, no zero-width joiners inside Devanagari words).
-    Raises GarbledText / BinaryFile / EmptyFile."""
+    """Decode bytes to str (NFC, invisible format characters removed).
+    Raises GarbledText / BinaryFile / EmptyFile / CorruptBytes."""
     text = _decode(data)
-    return _RX_ZW_DEVA.sub("", unicodedata.normalize("NFC", text))
+    return strip_invisible(_RX_ZW_DEVA.sub("", unicodedata.normalize("NFC", text)))
+
+
+# Invisible format characters (zero-width space/joiners, soft hyphen, word joiner, bidi marks, BOM, CGJ).
+# They change nothing a reader sees but split a name or a number into pieces a detector would miss
+# ("Imr<ZWSP>an", "94673<ZWSP>24498"), so they are removed before ANY detection, in every format.
+_RX_INVISIBLE = re.compile("[\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180e\u200b-\u200f\u202a-\u202e"
+                           "\u2060-\u2064\u2066-\u206f\ufeff\ufe00-\ufe0f]")
+
+
+def strip_invisible(text):
+    if _RX_INVISIBLE.search(text):
+        text = _RX_INVISIBLE.sub("", text)
+    if _RX_NONLATIN_LOOKALIKE.search(text):
+        text = _RX_MIXED_WORD.sub(_fold_mixed, text)
+    return unhide(text)
+
+
+# Homoglyphs: Cyrillic / Greek letters that look like Latin ones, used inside an otherwise Latin word
+# ("Qоrvаntha" with Cyrillic о and а) to dodge matching. Only mixed-script words are folded, so real
+# Cyrillic or Greek text (and Greek symbols such as µ) is left alone.
+_CONFUSABLE = str.maketrans({
+    "а": "a", "е": "e", "о": "o", "р": "p", "с": "c", "у": "y", "х": "x", "і": "i", "ј": "j", "ѕ": "s", "ԁ": "d",
+    "ɡ": "g", "һ": "h", "ӏ": "l", "А": "A", "В": "B", "Е": "E", "К": "K", "М": "M", "Н": "H", "О": "O", "Р": "P",
+    "С": "C", "Т": "T", "Х": "X", "І": "I", "Ј": "J", "Ѕ": "S", "α": "a", "ο": "o", "ρ": "p", "ν": "v", "ι": "i",
+    "κ": "k", "τ": "t", "Α": "A", "Β": "B", "Ε": "E", "Ζ": "Z", "Η": "H", "Ι": "I", "Κ": "K", "Μ": "M", "Ν": "N",
+    "Ο": "O", "Ρ": "P", "Τ": "T", "Υ": "Y", "Χ": "X", "ⅼ": "l", "ꓲ": "I"})
+_RX_NONLATIN_LOOKALIKE = re.compile("[\u0370-\u03ff\u0400-\u04ff\u0500-\u052f\u0261\u217c\ua4f2]")
+_RX_MIXED_WORD = re.compile("[A-Za-z\u0370-\u03ff\u0400-\u052f\u0261\u217c\ua4f2]+")
+
+
+def _fold_mixed(m):
+    w = m.group(0)
+    if re.search("[A-Za-z]", w) and _RX_NONLATIN_LOOKALIKE.search(w):
+        return w.translate(_CONFUSABLE)
+    return w
+
+
+# Obfuscating encodings inside a value: percent-encoding (single or double, "Hemant%2520Verma") and
+# numeric character references that spell letters ("Hem&#97;nt"). Decoded before detection so the
+# hidden name is seen; the decoded (and then sanitised) form is what gets written.
+_RX_PCT_RUN = re.compile(r"[^\s\"'<>]*%[0-9A-Fa-f]{2}[^\s\"'<>]*")
+_RX_NCR = re.compile(r"&#(?:[xX]([0-9A-Fa-f]{1,6})|([0-9]{1,7}));")
+
+
+_RX_PCT_SEQ = re.compile(r"(?:%[0-9A-Fa-f]{2})+")
+
+
+def _unquote(s):
+    """Percent-decoding without any network-capable module (the guardrail forbids urllib)."""
+    return _RX_PCT_SEQ.sub(lambda m: bytes(int(m.group(0)[i + 1:i + 3], 16) for i in range(0, len(m.group(0)), 3))
+                           .decode("utf-8", errors="strict"), s)
+
+
+def _pct(m):
+    run = m.group(0)
+    for _ in range(3):
+        try:
+            nxt = _unquote(run) if "%" in run else run
+        except UnicodeDecodeError:
+            return m.group(0)
+        if nxt == run:
+            break
+        run = nxt
+    if any(not (c.isprintable() or c == " ") for c in run):
+        return m.group(0)
+    return run
+
+
+def _ncr(m):
+    try:
+        c = chr(int(m.group(1), 16) if m.group(1) else int(m.group(2)))
+    except (ValueError, OverflowError):
+        return m.group(0)
+    return c if (c.isalnum() or c in " .-'") else m.group(0)
+
+
+def unhide(text):
+    if "%" in text and _RX_PCT_RUN.search(text):
+        try:
+            text = _RX_PCT_RUN.sub(_pct, text)
+        except UnicodeDecodeError:
+            pass
+    if "&#" in text:
+        text = _RX_NCR.sub(_ncr, text)
+    return text
+
+
+def clean_obj(node, depth=0):
+    """strip_invisible over every string and key of a parsed JSON value (iterative-safe depth cap)."""
+    if depth > 200:
+        return node
+    if isinstance(node, str):
+        return strip_invisible(node)
+    if isinstance(node, list):
+        return [clean_obj(v, depth + 1) for v in node]
+    if isinstance(node, dict):
+        out = {}
+        for k, v in node.items():
+            out[strip_invisible(k) if isinstance(k, str) else k] = clean_obj(v, depth + 1)
+        return out
+    return node
 
 
 def _decode(data):
@@ -125,6 +240,8 @@ def _decode(data):
         text = data.decode("utf-8")
     except UnicodeDecodeError:
         text = None
+        if _looks_corrupt(data):
+            raise CorruptBytes()
     if text is None:
         # deterministic legacy chain (no statistical charset guessing: identical on every machine)
         for e in ("cp1252", "latin-1"):
@@ -139,6 +256,17 @@ def _decode(data):
     if ctrl > max(3, 0.02 * min(len(text), 20000)):
         raise BinaryFile()
     return text
+
+
+_RX_UTF8_MULTI = re.compile(rb"[\xc2-\xdf][\x80-\xbf]|[\xe0-\xef][\x80-\xbf]{2}|[\xf0-\xf4][\x80-\xbf]{3}")
+
+
+def _looks_corrupt(data):
+    """Invalid UTF-8 that is not a clean single-byte legacy file: NUL bytes, a byte-order mark in the
+    middle of the file, or valid UTF-8 multi-byte letters mixed with broken sequences."""
+    if b"\x00" in data or b"\xff\xfe" in data[2:] or b"\xfe\xff" in data[2:]:
+        return True
+    return bool(_RX_UTF8_MULTI.search(data))
 
 
 # zero-width joiners inside Devanagari words are rendering hints; left in, they split a name into two
@@ -174,11 +302,26 @@ def sniff_kind(relpath, text):
     return "text"
 
 
-def parse_json(text):
-    obj = json.loads(text)
+def _no_constant(c):
+    raise NonStandardJson()
+
+
+def _pairs_hook(pairs):
+    d = dict(pairs)
+    if len(d) != len(pairs):
+        raise NonStandardJson()
+    return d
+
+
+def parse_json(text, relpath=""):
+    """Strict RFC 8259 JSON: NaN/Infinity or duplicate keys raise NonStandardJson; JSON content
+    behind a CSV/TSV extension raises ContentMismatch (CSV must stay CSV)."""
+    if os.path.splitext(relpath)[1].lower() in CSV_EXT:
+        raise ContentMismatch()
+    obj = json.loads(text, parse_constant=_no_constant, object_pairs_hook=_pairs_hook)
     if not isinstance(obj, (dict, list)):
         raise Unsupported()
-    return obj
+    return clean_obj(obj)
 
 
 def is_fhir(obj):

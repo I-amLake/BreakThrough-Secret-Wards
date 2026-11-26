@@ -177,6 +177,7 @@ class Honey:
         new = [str(b[i] % 10) for i in range(len(ds))]
         if kind == "PHONE" and len(ds) >= 10:
             new[len(ds) - 10] = "6789"[b[20] % 4]
+            new[:len(ds) - 10] = ds[:len(ds) - 10]   # keep the trunk / country prefix ("0", "91", "091")
         if kind == "AADHAAR" and len(ds) == 12:
             new[0] = "23456789"[b[21] % 8]
             new[11] = verhoeff_digit("".join(new[:11]))
