@@ -41,7 +41,7 @@ _RULES = [
     ("contact", r"\b(contact|emergency|संपर्क)\b"),
     ("diagnosis", r"\b(diagnosis|dx|disease|condition|icd|problem|निदान|बीमारी|रोग)\b"),
     ("hospital", r"\b(hospital|facility|centre|center|clinic|अस्पताल)\b"),
-    ("clinical", r"\b(drug|medicine|medication|meds|dose|dosage|rx|prescription|lab|test|result|value|unit|units|bp|pulse|temp|temperature|spo2|weight|height|ward|bed|department|dept|frequency|duration|route|vitals?|procedure)\b"),
+    ("clinical", r"\b(drug|medicine|medication|meds|dose|dosage|rx|prescription|lab|test|result|test result|finding|measurement|reading|value|unit|units|bp|pulse|temp|temperature|spo2|weight|height|ward|bed|department|dept|frequency|duration|route|vitals?|procedure|amount|amount inr|inr|rs|rupees?|cost|fees?|price|charges?|paid|payment|bill amount|balance)\b"),
 ]
 _LB = r"(?<![0-9a-z\u0900-\u097F])"
 _RB = r"(?![0-9a-z\u0900-\u097F])"
@@ -125,7 +125,7 @@ def infer_from_values(values, dyn=None):
     n = float(len(vals))
     checks = [
         ("email", _EMAIL_V), ("abha", _ABHA_V), ("aadhaar", _AADHAAR_V), ("phone", _PHONE_V), ("pan", _PAN_V),
-        ("date", _DATE_V), ("pin", _PIN_V), ("sex", _SEX_V),
+        ("date", _DATE_V), ("sex", _SEX_V),
     ]
     for t, rx in checks:
         if sum(1 for v in vals if rx.match(v)) / n >= 0.7:

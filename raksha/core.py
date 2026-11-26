@@ -155,6 +155,21 @@ def set_age(unit, age):
 def finalize_unit(unit, default_year=None):
     """Derive birth-year estimates, LOS and QI after all fields were seen."""
     ref = unit.ref_date or (min(unit.dates) if unit.dates else None)
+    if unit.age is not None and ref and unit.prof.dobs:
+        fixed_dobs = set()
+        fixed_byears = []
+        for iso in sorted(unit.prof.dobs):
+            b = dt.date.fromisoformat(iso)
+            # Disambiguate 2-digit DOB year ("29/02/24" -> 1924 vs 2024) using explicit age
+            if abs((ref.year - b.year) - unit.age) >= 85 and b.year >= 2000:
+                try:
+                    b = b.replace(year=b.year - 100)
+                except ValueError:
+                    pass
+            fixed_dobs.add(b.isoformat())
+            fixed_byears.append(b.year)
+        unit.prof.dobs = fixed_dobs
+        unit.prof.byears = fixed_byears
     if ref is None and unit.age is not None and default_year and not unit.prof.byears:
         # undated record (e.g. a register without dates): the input's dominant year, with a wider window
         unit.prof.byears.extend([default_year - unit.age + k for k in (1, 0, -1, -2)])
@@ -221,8 +236,9 @@ def spans_evidence(unit, text, spans, patient_mode=False):
 def address_repl(meta, ctx, eng):
     pol = eng.policy
     parts = []
-    if meta.get("district") and ctx.level <= pol["district_level"]:
-        parts.append("Distt. " + meta["district"])
+    dist = meta.get("district") or ctx.qi.get("district")
+    if dist and ctx.level <= pol["district_level"]:
+        parts.append("Distt. " + dist)
     if meta.get("state"):
         parts.append(meta["state"])
     if meta.get("pin") and ctx.level <= pol["pin3_level"]:
@@ -459,6 +475,14 @@ def render_value(value, ctx, field_hint=None):
         dec = _decode_b64_text(text)
         if dec is not None:  # base64-wrapped text (scanned forms, attachments): sanitise inside, re-wrap
             new, n, ents = render_value(dec, ctx, field_hint)
+            if _decode_b64_text(new) is None:
+                runs = ctx.eng.detector.oov_proper_runs(new, getattr(ctx.eng, "safe_file_tokens", ()))
+                if runs:
+                    buf = list(new)
+                    for a, b in reversed(runs):
+                        buf[a:b] = list("[REDACTED]")
+                        n += 1
+                    new = "".join(buf)
             return base64.b64encode(new.encode("utf-8")).decode("ascii"), n, ents
     whole_b64 = bool(_RX_B64_SHORT.fullmatch(text.strip()))
     t2, nb = b64_tokens_sub(text, ctx, field_hint)

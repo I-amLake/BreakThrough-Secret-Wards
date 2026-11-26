@@ -145,10 +145,16 @@ def main():
     ap.add_argument("--output", required=True)
     ap.add_argument("--raw", action="store_true", help="attack the raw input instead (calibration; perfect pooling)")
     a = ap.parse_args()
-    reg = list(csv.DictReader(open(os.path.join(a.kit, "dev", "attacker", "registry.csv"), encoding="utf-8")))
+    with open(os.path.join(a.kit, "dev", "attacker", "registry.csv"), encoding="utf-8") as fh:
+        reader = csv.DictReader(fh)
+        cols = set(reader.fieldnames or ())
+        missing = {"rid", "age", "district", "village"} - cols
+        if missing:
+            raise ValueError("registry.csv missing required columns: %s" % sorted(missing))
+        reg = list(reader)
     for r in reg:
         r["_age"] = int(r["age"])
-        r["_d"], r["_t"], r["_v"] = norm_place(r["district"]), norm_place(r["tehsil"]), norm_place(r["village"])
+        r["_d"], r["_t"], r["_v"] = norm_place(r.get("district", "")), norm_place(r.get("tehsil", "")), norm_place(r.get("village", ""))
     places = {"district": {r["_d"] for r in reg}, "tehsil": {r["_t"] for r in reg}, "village": {r["_v"] for r in reg}}
     truth = json.load(open(os.path.join(a.kit, "dev", "truth", "truth.json"), encoding="utf-8"))
     rid_of = {pt: p["rid"] for pt, p in truth["patients"].items()}

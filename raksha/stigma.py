@@ -159,8 +159,13 @@ class Honey:
         words = []
         for w in orig.split():
             deva = has_devanagari(w)
+            if not deva and len(w.rstrip(".")) == 1 and w[0].isalpha():
+                ch = self._word(self._bytes(), False)[0]
+                ch = ch.upper() if w[0].isupper() else ch.lower()
+                words.append(ch + ("." if w.endswith(".") else ""))
+                continue
             target = score(w) if score else None
-            best, best_s = None, -9.0
+            best, best_s = None, -1e9
             for _ in range(24):
                 cand = self._word(self._bytes(), deva)
                 if not deva:
@@ -169,7 +174,7 @@ class Honey:
                     best = cand
                     break
                 sc = score(cand)
-                if sc > best_s:
+                if best is None or sc > best_s:
                     best, best_s = cand, sc
                 if target is not None and sc >= target - 0.02:
                     break

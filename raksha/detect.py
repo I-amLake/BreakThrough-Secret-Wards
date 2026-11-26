@@ -16,7 +16,14 @@ from .lexicon import get_lexicon
 from .schema import classify_label
 from .translit import devanagari_to_latin, fold, has_devanagari, skeleton
 
-DIGITS = str.maketrans("०१२३४५६७८९", "0123456789")
+DIGITS = str.maketrans(
+    "०१२३४५६७८९"
+    "০১২৩৪৫৬৭৮৯"
+    "૦૧૨૩૪૫૬૭૮૯"
+    "੦੧੨੩੪੫੬੭੮੯"
+    "０１２３４５６７８９",
+    "0123456789" * 5,
+)
 
 PRIORITY = {"CANARY": 110, "EVENT": 69, "MED": 100, "DOCTOR": 95, "EMAIL": 90, "ABHA": 89, "AADHAAR": 88, "PAN": 88, "PHONE": 87,
             "MRN": 85, "INSURANCE": 85, "ID": 84, "DATE": 70, "DOB": 71, "AGE": 65, "PIN": 62, "ADDRESS": 60,
@@ -96,11 +103,13 @@ RX_PAN = re.compile(r"(?<![A-Za-z0-9])[A-Za-z]{3}[PCHFATBLJGpchfatbljg][A-Za-z] 
 # and labelled government IDs with no fixed public format (voter ID / EPIC, passport, driving licence, ration card)
 RX_PAN_LABELLED = re.compile(r"(?i)(?<![A-Za-z])(?:pan|p\.a\.n\.?|पैन)(?:\s*(?:no\.?|number|card|कार्ड|नं\.?))?\s*[:#.=\-–]?\s*"
                              r"([A-Za-z]{5} ?\d{4} ?[A-Za-z])(?![A-Za-z0-9])")
-RX_GOV_LABELLED = re.compile(r"(?i)(?<![A-Za-z])(?:voter\s?id|epic(?:\s?no)?|election\s+card|passport|driving\s+licen[cs]e|"
+RX_GOV_LABELLED = re.compile(r"(?i)(?<![A-Za-z])(?:voter(?:\s?(?:id|no\.?|card))?|epic(?:\s?no)?|election\s+card|passport|driving\s+licen[cs]e|"
                              r"\bdl|ration\s+card|मतदाता\s?पहचान|पासपोर्ट)(?:\s*(?:no\.?|number|#))?\s*[:#.=\-–]?\s*"
                              r"((?=[A-Za-z0-9/\-]*\d{3})[A-Za-z0-9][A-Za-z0-9/\-]{5,19})(?![A-Za-z0-9])")
 RX_PHONE = re.compile(
     _NB + r"(?:(?:\+|00)\s?91[\s.-]?|91[\s.-]|0)?\(?[6-9]\d{4}\)?(?:[.\-]|[ \t]*(?:\r?\n)?[ \t]*)\d{5}(?![\w])|"
+    + _NB + r"(?:(?:\+|00)\s?91[\s.-]?|91[\s.-]|0)?\(?[6-9]\d{3}\)?[\s.-]\d{3}[\s.-]\d{3}(?![\w])|"
+    + _NB + r"(?:(?:\+|00)\s?91[\s.-]?|91[\s.-]|0)?[6-9]\d{3}[\s.-]\d{6}(?![\w])|"
     + _NB + r"(?:(?:\+|00)\s?91[\s.-]?|91[\s.-]|0)?[6-9]\d{2}[\s.-]\d{3}[\s.-]\d{4}(?![\w])|"
     + _NB + r"(?:(?:\+|00)\s?91[\s.-]?|91)?[6-9]\d{9}(?![\w])|"
     + _NB + r"\(?0\d{2,4}\)?[\s-]\d{6,8}(?![\w])|"
@@ -196,6 +205,7 @@ RX_AGE = [
     re.compile(r"\b(?:M|F)\s?/\s?(\d{1,3})(?![\d/])"),
     re.compile(r"(?<![\d])(\d{1,3})\s?(?:वर्ष|वर्षीय|साल)\s?(?:का|की|के|वर्षीय|पुरुष|महिला)"),
     re.compile(r"(?<![\w/.])(\d{1,3})\s?(?:M|F)\b(?![/\-])"),
+    re.compile(r"(?<![\w/.])(\d{1,3})\s?y\b(?![/\-]|\s*(?:back|ago|old|later|before|prior|earlier|duration|history|since))", re.I),
 ]
 _AGE_WORD_UNIT = re.compile(r"(?i)[\s-]*(years?|yrs?\.?|yr\.?|saal|sal|baras|baras|varsh|वर्षीया|वर्षीय|वर्ष|साल|बरस)(?![A-Za-z\u0900-\u097F])")
 _AGE_WORD_CUE = re.compile(r"(?i)(?:\bage[d]?|\bumar|\bumr|\bumra|\baayu|उम्र|उमर|आयु|\bturns?|\bturned|\bturning|\bwill\s+turn)\s*(?:of|is|was|hai|:|-|=)?\s*$")
@@ -212,6 +222,7 @@ RX_SEX = re.compile(r"(?<![\w\u0900-\u097F])((?i:male|female|man|woman|boy|girl|
                     r"|\b([MF])\s?/\s?\d|(?i:sex|gender|ling|लिंग)\s*[:\-]?\s*([MF])\b")
 
 _AMBIG_CTX = re.compile(r"\s+(?:ji|jee|devi|bai|ben|kumari|babu|babuji|sahab|sahib|saheb|dada|didi|bhaiya|bhai)\b|\s*,?\s*[SWDCH]\s?/\s?[oO]\b|\s+[A-Z][a-z]+\s*,\s*[SWDCH]/[oO]\b|\s*\(\s*\d{1,3}\s*(?:y|yrs?|years?)?\s*/?\s*[MF]\b")
+_AMBIG_GIVEN = {"will", "mark", "grace", "hope", "faith", "joy", "rose", "may", "june", "august", "april", "march"}
 _SENT_LAT = re.compile(r"[A-Za-z]+(?:'(?![sS]\b)[A-Za-z]+)*\.?|[\u0900-\u0963\u0970-\u097F]+\.?")
 
 # relation marker -> (canonical role of the RELATIVE, sex hint for the PATIENT)
@@ -331,13 +342,13 @@ RX_ALIAS_PRE = re.compile(r"(?i)(?<![\w])(?:also\s+known\s+as|a\.?k\.?a\.?|alias
 RX_ALIAS_POST = re.compile(r"(?i)\s+(?:(?:naam|name)\s+se\s+)?(?:bulate|bulaate|bulati|bulaati|pukarte|pukaarte|kehte|kahte|bolte)\s+(?:hain|hai|the|thi)"
                            r"|\s+(?:ke|ki)\s+naam\s+se(?:\s+jaan|\s+bul|\s+mash)|\s+(?:नाम\s+से\s+)?(?:बुलाते|पुकारते|कहते)\s+(?:हैं|है|थे)")
 RX_REL_POST = re.compile(r"(?i)\s+(?:ki|ke|ka|की|के|का)\s+(wife|patni|biwi|pati|husband|beta|beti|bete|son|daughter|father|mother|maa|papa|bahu|पत्नी|पति|बेटा|बेटी|बेटे|पिता|माता|माँ|बहू)(?![\w\u0900-\u097F])")
-RX_DOCTOR = re.compile(r"(?<![\w])(?:Dr|DR|dr|Doctor|Prof)\.?\s*(?=[A-Z\u0900-\u097F])|(?<![\w\u0900-\u097F])(?:डॉक्टर|डॉ|डा)(?![\u0900-\u097F])\.?\s*")
+RX_DOCTOR = re.compile(r"(?<![\w])(?:(?:Dr|DR|dr|Prof)\.\s*|(?:Dr|DR|dr|Doctor|Prof)\s+)(?=[A-Z\u0900-\u097F])|(?<![\w\u0900-\u097F])(?:डॉक्टर|डॉ|डा)(?![\u0900-\u097F])\.?\s*")
 RX_BY_CUE = re.compile(r"(?i)(?<![\w])(?:called|witnessed|raised|brought|accompanied|informed|signed|reported|requested|visited|escorted|consented|filled|registered|attended|countersigned|"
                        r"verified|approved|authori[sz]ed|collected|received|entered|typed|dictated|transcribed|prepared|handed\s+over|picked\s+up|claimed|identified)\s+by\s*:?\s*(?=[A-Z\u0900-\u097F])")
 # a role noun naming a person who is not staff: "caller Saverin Ekhollow", "informant: Rama Devi"
 RX_ROLE_BEFORE = re.compile(r"(?i)(?<![\w])(?:caller|informant|attendant|visitor|guardian|caretaker|care\s?giver|complainant|requester|requestor|"
                             r"bystander|escort|nominee|next\s+of\s+kin|contact\s+person|applicant|claimant|beneficiary|policy\s?holder|insured|"
-                            r"audit(?:\s+reviewer)?(?:\s+note)?|reviewer(?:\s+note)?|auditor)"
+                            r"(?:hidden\s+)?audit(?:\s+reviewer)?(?:\s+(?:note|record))?|reviewer(?:\s+note)?|auditor)"
                             r"\s*(?:name)?\s*[:\-]?\s*(?=[A-Z])")
 _RX_CAP_WORD = re.compile(r"([A-Z][a-z]{1,20}|[A-Z]{2,20})(?![\w'\u2019])")
 RX_ROLE_AFTER = re.compile(r"(?<![\w.])((?:[A-Z][a-z]+ ){1,2}[A-Z][a-z]+)(?=\s*\(\s*(?:attendant|visitor|relative|guardian|caretaker|bystander|wife|husband|son|daughter|mother|father|brother|sister|patient|pt|informant|witness)\b|\s*,?\s*(?:mob(?:ile)?|ph(?:one)?|contact|tel|cell)\.?\s*(?:no\.?)?\s*[:\-]?\s*(?:\+?91[\s-]?)?[6-9]\d)")
@@ -1363,6 +1374,10 @@ class Detector:
             if r and (text[r[0]].isupper() or has_devanagari(text[r[0]])) and \
                     all(self.plausible_name_tok(t) or self.tok_ok(t, False) for t in text[r[0]:r[1]].split()):
                 out.append(Span(r[0], r[1], "NAME", text[r[0]:r[1]], role="cued", meta={"alias": True}))
+            elif r is None:
+                r2 = self._cap_run(text, m.end() + fw.end(), allow_upper=True)
+                if r2:
+                    out.append(Span(r2[0], r2[1], "NAME", text[r2[0]:r2[1]], role="cued", meta={"alias": True}))
         for m in RX_ALIAS_POST.finditer(text):
             b = self._collect_backward(text, toks, m.start(), 1)
             if b and (text[b[0]].isupper() or has_devanagari(text[b[0]])) and \
@@ -1401,7 +1416,11 @@ class Detector:
                 b = self._collect_backward(text, toks, s, 2)
                 if b is None:
                     pw = toks[i - 1]
-                    if re.fullmatch(r" ", text[pw[1]:s]) and self.tok_ok(pw[2], True) and not self.lex.is_stop(pw[2]):
+                    pw_l = pw[2].lower().rstrip(".")
+                    pw_ok = (self.tok_ok(pw[2], True) and not self.lex.is_stop(pw[2])) or (
+                        pw_l in _AMBIG_GIVEN and pw[2][:1].isupper() and not pw[2].isupper()
+                    )
+                    if re.fullmatch(r" ", text[pw[1]:s]) and pw_ok:
                         b = (pw[0], pw[1])
                 if b:
                     sx = lex.honor_suf.get(wl, lex.honor_suf.get(w, "U"))
@@ -1409,6 +1428,11 @@ class Detector:
         # patient cues
         for m in RX_PATIENT_CUE.finditer(text):
             r = self._collect_forward(text, toks, m.end(), 3, True)
+            if not r:
+                # Allow "Report of Grace ji" / "Patient Name: Grace" where the given name is in _AMBIG_GIVEN
+                fw_m = re.match(r"\s*([A-Z][a-z]{2,})(?=\s+(?:ji|jee|devi|bai|ben|kumari|babu|didi|bhai|sahab)\b|\s*,|\s*$)", text[m.end():])
+                if fw_m and fw_m.group(1).lower() in _AMBIG_GIVEN:
+                    r = (m.end() + fw_m.start(1), m.end() + fw_m.end(1))
             if not r and re.search(r"[:=\-–]", m.group(0)):
                 # "Patient: Qorvantha Belisk": a labelled value of >= 2 capitalised non-vocabulary words
                 r2 = self._cap_run(text, m.end())
@@ -1449,7 +1473,8 @@ class Detector:
                 out.append(Span(r[0], r[1], "NAME", text[r[0]:r[1]], role="relative"))
         for m in RX_BEFORE_REL.finditer(text):  # "Gonavati, W/o Kelvansh": the subject of a relation marker is a person
             w = m.group(1)
-            if all(self._tok_ok_latin(t, True) and not lex.is_stop(t) and (not lex.is_medical(t.lower()) or t.lower() in lex.ambiguous)
+            if all(((self._tok_ok_latin(t, True) and not lex.is_stop(t)) or (t.lower() in _AMBIG_GIVEN and t[:1].isupper() and not t.isupper()))
+                   and (not lex.is_medical(t.lower()) or t.lower() in lex.ambiguous)
                    and t.lower() not in lex.honor_pre for t in w.split()):
                 out.append(Span(m.start(1), m.end(1), "NAME", w, role="cued"))
         for m in RX_ROLE_AFTER.finditer(text):
@@ -1570,12 +1595,16 @@ def sex_hints(text, spans):
     m = RX_SEX.search(norm)
     vals = []
     for m in RX_SEX.finditer(norm):
+        if re.search(r"(?i)\b(?:attendant|informant|visitor|caller|escort|bystander|witness|caretaker|companion)\b", norm[max(0, m.start() - 25):m.start()]):
+            continue
         w = (m.group(1) or m.group(2) or m.group(3) or m.group(4) or m.group(5) or "").lower()
         if w in ("male", "man", "boy", "पुरुष", "लड़का", "aadmi", "m"):
             vals.append("M")
         elif w in ("female", "woman", "girl", "महिला", "स्त्री", "लड़की", "aurat", "f"):
             vals.append("F")
     for sp in spans:
+        if re.search(r"(?i)\b(?:attendant|informant|visitor|caller|escort|bystander|witness|caretaker|companion)\b", norm[max(0, sp.start - 30):sp.start]):
+            continue
         if sp.kind == "NAME" and sp.role == "relative" and sp.meta.get("psex") in ("M", "F"):
             vals.append(sp.meta["psex"])
         if sp.kind == "NAME" and sp.meta.get("sex") in ("M", "F") and sp.role != "relative":

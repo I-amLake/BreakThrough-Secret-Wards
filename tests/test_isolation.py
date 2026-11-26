@@ -38,7 +38,8 @@ class Isolation(unittest.TestCase):
         for dp, _, fns in os.walk(os.path.join(REPO, "raksha")):
             files += [os.path.join(dp, f) for f in fns if f.endswith(".py")]
         for f in files:
-            src = open(f, encoding="utf-8").read()
+            with open(f, encoding="utf-8") as fh:
+                src = fh.read()
             self.assertIsNone(FORBIDDEN.search(src), f)
             self.assertNotRegex(src, r"(?m)^\s*(from|import)\s+(dev_eval|scripts)\b", f)
 
@@ -52,13 +53,18 @@ class Isolation(unittest.TestCase):
                 fh.write("patient_name,age,phone,diagnosis\nTevan Orlikar,52,9876501234,dengue\n")
             log = os.path.join(w, "opened.txt")
             hook = os.path.join(w, "hook.py")
-            open(hook, "w").write(HOOK)
+            with open(hook, "w", encoding="utf-8") as fh:
+                fh.write(HOOK)
             env = dict(os.environ, RAKSHA_SECRET="iso-test", PYTHONHASHSEED="0")
             r = subprocess.run([sys.executable, hook, log, REPO, inp, out], env=env, capture_output=True, text=True)
             self.assertEqual(r.returncode, 0, r.stderr[-500:])
-            opened = [l.strip() for l in open(log) if l.strip()]
+            with open(log, encoding="utf-8") as fh:
+                opened = [l.strip() for l in fh if l.strip()]
             self.assertTrue(any(p.startswith(inp) for p in opened))
-            allowed = [os.path.realpath(REPO), os.path.realpath(w), w, REPO, sys.prefix, sys.base_prefix, "/usr", "/lib", "/etc", "/proc", "/dev"]
+            stdlib_dir = os.path.realpath(os.path.dirname(os.__file__))
+            allowed = [os.path.realpath(REPO), os.path.realpath(w), w, REPO, sys.prefix, sys.base_prefix,
+                       os.path.realpath(sys.prefix), os.path.realpath(sys.base_prefix), stdlib_dir,
+                       "/usr", "/lib", "/etc", "/proc", "/dev"]
             for p in opened:
                 self.assertIsNone(FORBIDDEN.search(p), p)
                 self.assertTrue(any(p.startswith(a) for a in allowed), "unexpected open: " + p)

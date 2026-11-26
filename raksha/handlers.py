@@ -404,15 +404,20 @@ def csv_rewrite(doc, eng):
         hdr.append(nh)
     w.writerow(hdr)
     has_name = any(t in ("name", "first_name") for t in doc.types)
+    code_ctx_cols = [i for i, h in enumerate(p["header"]) if re.search(r"\b(?:test|unit|code)\b", str(h), re.I)]
     for ri, row in enumerate(doc.rows):
         u = doc.units[ri]
         ctx = eng.unit_ctx(doc, u)
         slot = {"mrn_ok": True}
         if not has_name:
             slot["mrn_ok"] = True
+        is_code_row = any(i < len(row) and re.search(r"(?i)\b(?:snomed|loinc|icd|cpt|specimen|code)\b", str(row[i])) for i in code_ctx_cols)
         new = []
         for ci, val in enumerate(row):
             ctx.order = doc.orders[ci]
+            if is_code_row and doc.types[ci] == "clinical" and str(val).strip().isdigit():
+                new.append(str(val))
+                continue
             nv, n = rewrite_field(doc.types[ci], val, ctx, p["header"][ci], slot, doc.orders[ci])
             new.append(nv if isinstance(nv, str) else str(nv))
         if ctx.psn and not ctx.psn_used:
@@ -683,6 +688,8 @@ def _rewrite_json(node, ctx, eng, slot, parent=None, label="", order=None, depth
             return out
         out = {}
         parent = _dict_ctx(node, parent)
+        is_code_dict = any(re.search(r"\b(?:test|unit|code)\b", str(sk), re.I) and isinstance(sv, str)
+                           and re.search(r"(?i)\b(?:snomed|loinc|icd|cpt|specimen|code)\b", sv) for sk, sv in node.items())
         for k, v in node.items():
             t = _key_type(k, parent)
             nk = key_fn(k) if key_fn else k
@@ -691,6 +698,9 @@ def _rewrite_json(node, ctx, eng, slot, parent=None, label="", order=None, depth
             if isinstance(v, (dict, list)):
                 out[nk] = _rewrite_json(v, ctx, eng, slot, _child_ctx(k, t, parent), k, order, depth + 1, key_fn)
             else:
+                if is_code_dict and t == "clinical" and str(v).strip().isdigit():
+                    out[nk] = v
+                    continue
                 if isinstance(v, str) and _pathlike(v):
                     nv, ch = core.sanitize_token_string(v, eng, None)
                     eng.count_ids(1 if ch else 0)
@@ -990,6 +1000,21 @@ def _attachment_texts(node, depth=0):
     return out
 
 
+def _decode_hex_text(s):
+    t = s.strip()
+    if len(t) < 12 or len(t) > 1024 or len(t) % 2 or not re.fullmatch(r"[0-9a-fA-F]+", t):
+        return None
+    try:
+        dec = bytes.fromhex(t).decode("utf-8")
+    except Exception:
+        return None
+    if not dec or not re.search(r"[A-Za-z\u0900-\u097F]", dec):
+        return None
+    if sum(1 for ch in dec if ch.isprintable() or ch in "\n\r\t") < len(dec):
+        return None
+    return dec
+
+
 def _collect_strings(node, out, key=None, depth=0):
     if depth > 60:
         return
@@ -1005,6 +1030,9 @@ def _collect_strings(node, out, key=None, depth=0):
         if key == "div" and "<!--" in node:
             node = re.sub(r"<!--.*?-->", "", node, flags=re.DOTALL)
         out.append(node)
+        dec_hex = _decode_hex_text(node)
+        if dec_hex:
+            out.append(dec_hex)
 
 
 def fhir_rewrite(doc, eng):
@@ -1153,6 +1181,18 @@ def _fhir_walk(node, ctx, eng, key, depth=0, parent=None):
             if c_removed:
                 eng.count_ids(c_removed)
             node = cleaned_div
+        dec_hex = _decode_hex_text(node)
+        if dec_hex is not None:
+            new_dec, n, ents = render_value(dec_hex, ctx)
+            runs = eng.detector.oov_proper_runs(new_dec, getattr(eng, "safe_file_tokens", ()))
+            if runs:
+                buf = list(new_dec)
+                for a, b in reversed(runs):
+                    buf[a:b] = list("[REDACTED]")
+                    n += 1
+                new_dec = "".join(buf)
+            eng.add_entities(ents, n)
+            return new_dec.encode("utf-8").hex() if new_dec != dec_hex else node
         new, n, ents = render_value(node, ctx)
         eng.add_entities(ents, n)
         if key == "display" and isinstance(parent, dict) and str(parent.get("reference", "")) in eng.current_patient_refs:
