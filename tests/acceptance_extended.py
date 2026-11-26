@@ -86,7 +86,7 @@ def build(inp):
     with open(os.path.join(inp, "fhir", "bundle_x.json"), "w", encoding="utf-8") as f:
         json.dump(bundle, f, indent=1)
     g = UNSEEN
-    # unseen given names next to surname/suffix, Hinglish and role cues (Grok review findings)
+    # unseen given names next to surname/suffix, Hinglish and role cues (external review findings)
     with open(os.path.join(inp, "notes", "ward_round_3.txt"), "w", encoding="utf-8") as f:
         f.write("Ward round note\n%s Devi ko bukhar hai, BP 130/80.\n%s Yadav came with cough for 2 weeks.\n"
                 "%s aur uski wife %s aaye the.\nLater the attendant was %s.\n%s Bano, 30F, admitted for anaemia.\n"

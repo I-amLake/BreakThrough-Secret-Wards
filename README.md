@@ -164,7 +164,7 @@ tests/
   `Koch's`) are protected spans that no PII rule may overwrite. Doctors (`Dr.`, `डॉ.`) are kept.
 * **Identifiers.** Aadhaar (spaced, masked `XXXX XXXX 1234`, Verhoeff used as a booster), ABHA
   number/address, PAN, phones (+91, 0-prefixed, split `98765 43210`, landlines, Devanagari digits),
-  emails, labelled IDs (UHID/MRN/IPD/Reg/policy/PM-JAY), glued record IDs (`DHH-IPD-00591`), PIN with context.
+  emails, labelled IDs (UHID/MRN/IPD/Reg/policy/PM-JAY), glued record IDs (`XYZ-IPD-01234`), PIN with context.
 * **Names.** Context first, lists second: label:value pairs (`Naam:`, `मरीज़ का नाम:`, `Patient Name:`),
   relation markers with trap handling (`S/o`, `W/o`, `D/o`; `C/O fever` vs `C/O Thivaresh`; `H/O TB` vs
   `H/O Thivaresh`; `X की पत्नी Y`), relation nouns, Hinglish postpositions (`Gonavati ka BP`), honorifics and
