@@ -6,10 +6,10 @@ import io
 import json
 import re
 
-from . import core
+from . import core, stigma
 from .core import Ctx, Unit, add_name, apply_dob, band_for, finalize_unit, has_digits, norm_id, parse_age, parse_sex, render, render_value, rel_from_value, set_age, spans_evidence
 from .dates import numeric_order_votes, parse_full
-from .detect import DIGITS, PII_KINDS, digits_only, label_relation, norm_phone
+from .detect import DIGITS, PII_KINDS, RX_CANARY, digits_only, label_relation, norm_phone
 from .privacy import age_band, pin3
 from .schema import classify_label, date_order_hint, infer_from_values, value_type
 from .translit import fold, name_tokens
@@ -146,6 +146,8 @@ def rewrite_field(ftype, value, ctx, label, slot, order=None):
     eng.entities (typed spans found inside the value keep their own type; the rest get the field's)."""
     ents = ctx.eng.entities
     before = sum(ents.values())
+    if isinstance(value, str):
+        value = _clean_marker(value, ctx.eng)
     nv, n = _rewrite_field(ftype, value, ctx, label, slot, order)
     extra = n - (sum(ents.values()) - before)
     if extra > 0:
@@ -247,6 +249,9 @@ def _rewrite_field(ftype, value, ctx, label, slot, order=None):
                 return r[1](r[0] + dt.timedelta(days=ctx.shift)), 0
             except Exception:
                 return "[DATE]", 0
+    if ftype == "hospital" and stigma.mask_structured_facility(ctx):
+        eng.shield["facility_names_removed"] += 1
+        return "[FACILITY]", 1
     if ftype in ("doctor", "sex", "state", "hospital"):
         new, n, _ = render_value(v, ctx, ftype)  # doctor too: "Referred by: brother, 98..." carries PII
         return (value if is_num else new), n
@@ -354,6 +359,7 @@ def csv_rewrite(doc, eng):
         w.writerow([render_value(c, fctx)[0] for c in pr])
     hdr = []
     for h in p["header"]:
+        h = _clean_marker(h, eng)
         nh, changed = core.sanitize_token_string(h, eng) if _header_has_pii(h, eng) else (h, False)
         if changed:
             doc.header_changed = True
@@ -557,9 +563,49 @@ def _json_evidence(node, unit, eng, parent=None, label="", order=None, depth=0):
                 field_evidence(unit, parent if parent in ("diagnosis",) else None, el, label, eng, order)
 
 
+def _clean_marker(value, eng, replacement="[REDACTED]"):
+    clean, count = RX_CANARY.subn(replacement, value)
+    if not count and len(value) >= 8 and len(value) % 4 == 0 and core._RX_B64_SHORT.fullmatch(value):
+        decoded = core._decode_b64_any(value)
+        if decoded:
+            changed, count = RX_CANARY.subn(replacement, decoded)
+            if count:
+                clean = base64.b64encode(changed.encode()).decode("ascii")
+    if count:
+        eng.count_ids(count, "CANARY")
+    return clean
+
+
+def _purge_markers(node, eng, key=None):
+    """Handle schema passthroughs as well as free text. Preserve distinct sibling keys."""
+    if isinstance(node, dict):
+        clean = {}
+        for name, value in node.items():
+            new = _clean_marker(name, eng)
+            if new != name and (new in node or new in clean):
+                new += "_" + eng.keys.token("metadata-key", name, 16)
+                while new in node or new in clean:
+                    new += "_"
+            clean[new] = _purge_markers(value, eng, name)
+        return clean
+    if isinstance(node, list):
+        return [_purge_markers(v, eng, key) for v in node]
+    if isinstance(node, str):
+        if key in {"id", "reference", "fullUrl"} and RX_CANARY.search(node):
+            # Keep identifiers legal and reference targets consistent.
+            def replace(m):
+                eng.count_ids(1, "CANARY")
+                return "redacted-" + eng.keys.token("resource-marker", m.group(), 16)
+            return RX_CANARY.sub(replace, node)
+        return _clean_marker(node, eng)
+    return node
+
+
 def json_extract(doc, eng):
     obj = doc.obj
     recs = find_records(obj)
+    if any(RX_CANARY.search(ptr) for ptr, _ in recs):
+        raise ValueError("unsafe_record_locator")
     doc.records = recs
     units = []
     order = eng.doc_order(doc)
@@ -631,7 +677,7 @@ def _pathlike(v):
 
 
 def json_rewrite(doc, eng):
-    obj = doc.obj
+    obj = _purge_markers(doc.obj, eng)
     order = eng.doc_order(doc)
     rec_ptrs = {ptr: u for (ptr, _), u in zip(doc.records, doc.units)}
 
@@ -915,7 +961,7 @@ def _collect_strings(node, out, key=None, depth=0):
 
 
 def fhir_rewrite(doc, eng):
-    b = json.loads(json.dumps(doc.obj))
+    b = _purge_markers(doc.obj, eng)
     u = doc.units[0]
     ctx = eng.unit_ctx(doc, u)
     pol = eng.policy

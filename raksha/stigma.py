@@ -82,6 +82,11 @@ RX_FACILITY = re.compile(
     r"(\s*(?:,|-|–|at|of|in|,\s*at)\s*)((?:[A-Z][A-Za-z.&']+[ \t]*){1,6})")
 
 
+def mask_structured_facility(ctx):
+    """Apply the linked patient's shield to this cell, including unlinked flagged records."""
+    return bool(ctx.unit and ctx.unit.stigma_pat and ctx.eng.policy["stigma"]["enabled"])
+
+
 def strip_facilities(text):
     """Returns (text, n) with condition-revealing facility names replaced by [FACILITY]."""
     n = [0]

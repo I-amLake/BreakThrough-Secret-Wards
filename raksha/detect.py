@@ -18,10 +18,10 @@ from .translit import devanagari_to_latin, fold, has_devanagari, skeleton
 
 DIGITS = str.maketrans("०१२३४५६७८९", "0123456789")
 
-PRIORITY = {"EVENT": 69, "MED": 100, "DOCTOR": 95, "EMAIL": 90, "ABHA": 89, "AADHAAR": 88, "PAN": 88, "PHONE": 87,
+PRIORITY = {"CANARY": 110, "EVENT": 69, "MED": 100, "DOCTOR": 95, "EMAIL": 90, "ABHA": 89, "AADHAAR": 88, "PAN": 88, "PHONE": 87,
             "MRN": 85, "INSURANCE": 85, "ID": 84, "DATE": 70, "DOB": 71, "AGE": 65, "PIN": 62, "ADDRESS": 60,
             "NAME": 50}
-PII_KINDS = {"EMAIL", "ABHA", "AADHAAR", "PAN", "PHONE", "MRN", "INSURANCE", "ID", "PIN", "ADDRESS", "NAME", "DOB"}
+PII_KINDS = {"CANARY", "EMAIL", "ABHA", "AADHAAR", "PAN", "PHONE", "MRN", "INSURANCE", "ID", "PIN", "ADDRESS", "NAME", "DOB"}
 
 
 class Span:
@@ -37,7 +37,20 @@ class Span:
 
 # ------------------------------------------------------------------ Stage A: shielding
 _UNITS = r"(?:mg|mcg|µg|ug|gm|g|kg|ml|mL|l|L|iu|IU|units?|U|meq|mEq|%|mmhg|mmHg|bpm|/min|mg/dl|mg/dL|g/dl|g/dL|mmol/l|mmol/L|/ul|/uL|/cumm|lakh|cells|°F|°C|cm|mm|puffs?|tabs?|caps?|drops?)"
+RX_MED_PREFIX = re.compile(r"(?i)\b(?:tab(?:let)?|syrup|syp|cap(?:sule)?|inj(?:ection)?)\.?[ \t]+([a-z]+)\b")
+RX_CANARY = re.compile(r"(?i)(?:\b|(?<=_))CANARY[\w_-]*\b")
+_DIGIT_WORDS = ("shunya zero शून्य", "ek एक", "do दो", "teen tin तीन", "chaar char चार",
+                "paanch panch पांच पाँच", "chhah chhe chheh छह छः", "saat sat सात",
+                "aath ath आठ", "nau नौ")
+_PHONE_WORDS = {word: str(i) for i, words in enumerate(_DIGIT_WORDS) for word in words.split()}
+_PHONE_WORD = "(?:" + "|".join(sorted(_PHONE_WORDS, key=len, reverse=True)) + ")"
+RX_SPOKEN_PHONE = re.compile(r"(?i)\b(?:mobile|mob|phone|मोबाइल|फोन)\.?[ \t]*(?:no\.?|number)?[ \t]*[:=-]?[ \t]*("
+                             + _PHONE_WORD + r"(?:[\s-]+" + _PHONE_WORD + r"){9,11})(?![\w\u0900-\u097f])")
+RX_BARE_SPOKEN_PHONE = re.compile(r"(?i)(?<![\w\u0900-\u097F])(" + _PHONE_WORD + r"(?:[\s-]+" + _PHONE_WORD + r"){9,10})(?![\w\u0900-\u097F])")
+RX_SPACED_PHONE = re.compile(r"(?<![\d\w])[6-9](?:[ \t]\d){9}(?![\d\w])")
+RX_DOTTED_PHONE = re.compile(r"(?<![\d\w])(?:(?:\+|00)?91[.-]|0)?[6-9]\d{2,3}[\.-]\d{3}[\.-]\d{3,4}(?![\d\w])")
 SHIELD_RX = [
+    re.compile(r"(?i)\b(?:parkinson|huntington|hodgkin|crohn|addison|cushing|graves|hashimoto|wilson|bell)(?:'s)?\s+(?:disease|syndrome|chorea|lymphoma|palsy|phenomenon|sign|goitre|thyroiditis)\b"),
     re.compile(r"(?i)(?<![0-9a-f-])[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?![0-9a-f-])"),   # UUIDs (FHIR ids)
     # organisation names: "Navodaya Charitable Hospital", "Seva Sadan", "City Labs"
     re.compile(r"(?:\b[A-Z][A-Za-z.&'-]+[ \t]+){1,4}(?:(?i:Hospitals?|Sadan|Clinic|Nursing Home|Medical College|Labs?|Laboratory|Diagnostics|Trust|Charitable|Foundation|Pharmacy|Chikitsalaya|Aushadhalaya)|CHC|PHC)\b"),
@@ -58,7 +71,7 @@ _NB = r"(?<![\w])(?<!\d[-/.])"
 RX_EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 RX_ABHA_ADDR = re.compile(r"[A-Za-z0-9._]+@(?:abdm|sbx|ndhm)\b", re.I)
 RX_ABHA = re.compile(_NB + r"\d{2}[\s-]\d{4}[\s-]\d{4}[\s-]\d{4}(?![\w])|" + _NB + r"\d{14}(?![\w])")
-RX_AADHAAR = re.compile(_NB + r"[2-9]\d{3}[\s-]?\d{4}[\s-]?\d{4}(?![\w])|(?:[xX*]{4}[\s-]?){2}\d{4}(?![\w])")
+RX_AADHAAR = re.compile(_NB + r"(?:[0-9]\d{3}[\s-]\d{4}[\s-]\d{4}|[2-9]\d{3}[\s-]?\d{4}[\s-]?\d{4}|(?:[xX*]{4}[\s-]?){2}\d{4})(?!\w)")
 RX_PAN = re.compile(r"(?<![A-Za-z0-9])[A-Za-z]{3}[PCHFATBLJGpchfatbljg][A-Za-z] ?\d{4} ?[A-Za-z](?![A-Za-z0-9])")
 # a labelled PAN-shaped value even when the 4th (entity) letter is not an official one ("PAN XYZQB9876C"),
 # and labelled government IDs with no fixed public format (voter ID / EPIC, passport, driving licence, ration card)
@@ -68,7 +81,7 @@ RX_GOV_LABELLED = re.compile(r"(?i)(?<![A-Za-z])(?:voter\s?id|epic(?:\s?no)?|ele
                              r"\bdl|ration\s+card|मतदाता\s?पहचान|पासपोर्ट)(?:\s*(?:no\.?|number|#))?\s*[:#.=\-–]?\s*"
                              r"((?=[A-Za-z0-9/\-]*\d{3})[A-Za-z0-9][A-Za-z0-9/\-]{5,19})(?![A-Za-z0-9])")
 RX_PHONE = re.compile(
-    _NB + r"(?:(?:\+|00)\s?91[\s.-]?|91[\s.-]|0)?\(?[6-9]\d{4}\)?[\s.-]?\d{5}(?![\w])|"
+    _NB + r"(?:(?:\+|00)\s?91[\s.-]?|91[\s.-]|0)?\(?[6-9]\d{4}\)?(?:[.\-]|[ \t]*(?:\r?\n)?[ \t]*)\d{5}(?![\w])|"
     + _NB + r"(?:(?:\+|00)\s?91[\s.-]?|91[\s.-]|0)?[6-9]\d{2}[\s.-]\d{3}[\s.-]\d{4}(?![\w])|"
     + _NB + r"(?:(?:\+|00)\s?91[\s.-]?|91)?[6-9]\d{9}(?![\w])|"
     + _NB + r"\(?0\d{2,4}\)?[\s-]\d{6,8}(?![\w])|"
@@ -725,6 +738,24 @@ class Detector:
                     out.append(Span(a, b, kind, f(m.group(0))))
         return out
 
+    def _invisible_ids(self, norm):
+        if not re.search(r"[\u200B-\u200D\uFEFF\u00AD]", norm):
+            return []
+        keep, parts = [], []
+        for i, ch in enumerate(norm):
+            if ch in "\u200b\u200c\u200d\ufeff\xad":
+                continue
+            keep.append(i)
+            parts.append(ch)
+        sh = "".join(parts)
+        out = []
+        for rx, kind, f in ((RX_PHONE, "PHONE", norm_phone), (RX_AADHAAR, "AADHAAR", digits_only),
+                            (RX_DOTTED_PHONE, "PHONE", norm_phone), (RX_SPACED_PHONE, "PHONE", norm_phone)):
+            for m in rx.finditer(sh):
+                a, b = keep[m.start()], keep[m.end() - 1] + 1
+                out.append(Span(a, b, kind, f(m.group(0))))
+        return out
+
     def _spelled_ages(self, norm, field_hint=None):
         """Ages written in words ("seventy two years", "pachpan saal ke", "पचपन साल की", "छियासठ वर्षीया",
         "turns forty") and bare "(46 yrs)" / "41 saal ka". A number word is an age only in an age frame:
@@ -766,6 +797,13 @@ class Detector:
             return []
         norm = text.translate(DIGITS)
         spans = []
+        for m in RX_CANARY.finditer(text):
+            spans.append(Span(m.start(), m.end(), "CANARY", m.group()))
+        for m in RX_MED_PREFIX.finditer(text):
+            spans.append(Span(m.start(1), m.end(1), "MED", m.group(1)))
+        for m in RX_SPOKEN_PHONE.finditer(norm):
+            digits = "".join(_PHONE_WORDS[w.lower()] for w in re.split(r"[\s-]+", m.group(1)))
+            spans.append(Span(m.start(1), m.end(1), "PHONE", norm_phone(digits)))
         # A. shielding
         for rx in SHIELD_RX:
             for m in rx.finditer(norm):
@@ -782,7 +820,7 @@ class Detector:
             d = digits_only(raw)
             ctx = norm[max(0, m.start() - 30):m.start()].lower()
             labelled = bool(re.search(r"aadhaa?r|adhaa?r|uid|आधार", ctx))
-            if not labelled and d.startswith("91") and d[2] in "6789" and len(d) == 12 and not verhoeff_ok(d):
+            if raw.isdigit() and not labelled and d.startswith("91") and d[2] in "6789" and len(d) == 12 and not verhoeff_ok(d):
                 continue  # +91 phone without separators: handled by phone regex
             spans.append(Span(m.start(), m.end(), "AADHAAR", d, meta={"verhoeff": len(d) == 12 and verhoeff_ok(d)}))
         for m in RX_PAN.finditer(norm):
@@ -795,6 +833,15 @@ class Detector:
             spans.append(Span(m.start(1), m.end(1), "ID", m.group(1).upper(), meta={"labelled": True}))
         for m in RX_PHONE.finditer(norm):
             spans.append(Span(m.start(), m.end(), "PHONE", norm_phone(m.group(0))))
+        for m in RX_SPACED_PHONE.finditer(norm):
+            digits = re.sub(r"\s+", "", m.group(0))
+            spans.append(Span(m.start(), m.end(), "PHONE", digits))
+        for m in RX_DOTTED_PHONE.finditer(norm):
+            spans.append(Span(m.start(), m.end(), "PHONE", norm_phone(m.group(0))))
+        for m in RX_BARE_SPOKEN_PHONE.finditer(norm):
+            digits = "".join(_PHONE_WORDS[w.lower()] for w in re.split(r"[\s-]+", m.group(1)))
+            spans.append(Span(m.start(1), m.end(1), "PHONE", norm_phone(digits)))
+        spans.extend(self._invisible_ids(norm))
         spans.extend(self._wrapped_ids(norm))
         for m in RX_LABELED_ID.finditer(norm):
             val = m.group(2).rstrip(".-")
