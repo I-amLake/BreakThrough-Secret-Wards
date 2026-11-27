@@ -31,6 +31,26 @@ for _w, _n in DEVA.items():
 for _w, _n in (("ek", 1), ("do", 2), ("teen", 3), ("char", 4), ("chaar", 4), ("paanch", 5), ("panch", 5), ("chhe", 6),
                ("chheh", 6), ("saat", 7), ("aath", 8), ("nau", 9), ("das", 10), ("sau", 100)):
     LATIN_FOLD.setdefault(fold(_w), _n)
+# Hinglish often drops the anusvara: चौंसठ is "chaunsath" or "chausath". Index the stripped
+# spelling too, and only when it does not already mean a different number.
+_ANUSVARA_EXTRA = {}
+_ANUSVARA_BAD = set()
+for _w, _n in DEVA.items():
+    _bare = _w.replace("\u0902", "").replace("\u0901", "")
+    if _bare == _w:
+        continue
+    _f = fold(devanagari_to_latin(_bare))
+    if len(_f) < 4:
+        continue
+    _prev = LATIN_FOLD.get(_f, _ANUSVARA_EXTRA.get(_f))
+    if _prev is not None and _prev != _n:
+        _ANUSVARA_BAD.add(_f)
+        continue
+    _ANUSVARA_EXTRA[_f] = _n
+for _f in _ANUSVARA_BAD:
+    _ANUSVARA_EXTRA.pop(_f, None)
+for _f, _n in _ANUSVARA_EXTRA.items():
+    LATIN_FOLD.setdefault(_f, _n)
 
 _EN_RX = re.compile(r"(?i)(?<![A-Za-z])(?:(" + "|".join(_EN_TENS) + r")(?:[\s-]+(" + "|".join(_EN_UNITS[1:10]) + r"))?"
                     r"|(" + "|".join(sorted(_EN_UNITS[1:], key=len, reverse=True)) + r")|(hundred))(?![A-Za-z])")

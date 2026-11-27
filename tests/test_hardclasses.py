@@ -16,6 +16,8 @@ class T(unittest.TestCase):
         self.assertIn(("AGE", "seventy-three"), kinds("Patient is seventy-three years old."))
         self.assertIn(("AGE", "pachpan"), kinds("Woh pachpan saal ki hain."))
         self.assertIn(("AGE", "छियासठ"), kinds("मरीज़ (छियासठ वर्षीय) आए"))
+        self.assertIn(("AGE", "chausath"), kinds("Umar chausath saal"))
+        self.assertIn(("AGE", "paisath"), kinds("age paisath years"))
         for t in ("three years back", "do saal se khansi", "for two years now", "Dolo 650 SOS"):
             self.assertFalse([k for k in kinds(t) if k[0] == "AGE"], t)
 

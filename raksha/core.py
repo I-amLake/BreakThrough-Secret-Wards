@@ -188,6 +188,9 @@ def finalize_unit(unit, default_year=None):
 def spans_evidence(unit, text, spans, patient_mode=False):
     """Add identifiers / relatives / dates from free-text spans to the unit."""
     for sp in spans:
+        # Shared service/payment identifiers must never become patient evidence.
+        if sp.meta.get("nolink"):
+            continue
         k = sp.kind
         if k == "PHONE" and len(sp.text) == 10:
             unit.prof.phones.add(sp.text)

@@ -97,15 +97,24 @@ _NB = r"(?<![\w])(?<!\d[-/.])"
 RX_EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 RX_ABHA_ADDR = re.compile(r"[A-Za-z0-9._]+@(?:abdm|sbx|ndhm)\b", re.I)
 RX_ABHA = re.compile(_NB + r"\d{2}[\s-]\d{4}[\s-]\d{4}[\s-]\d{4}(?![\w])|" + _NB + r"\d{14}(?![\w])")
-RX_AADHAAR = re.compile(_NB + r"(?:[0-9]\d{3}[\s-]\d{4}[\s-]\d{4}|[2-9]\d{3}[\s-]?\d{4}[\s-]?\d{4}|(?:[xX*]{4}[\s-]?){2}\d{4})(?!\w)")
+# grouped Aadhaar allows a dot or a unicode dash as well as a space or hyphen ("2345.6789.0128")
+_AADHAAR_SEP = r"[\s.\-\u2010\u2011\u2012\u2013\u2014\u2212]"
+RX_AADHAAR = re.compile(_NB + r"(?:[0-9]\d{3}" + _AADHAAR_SEP + r"\d{4}" + _AADHAAR_SEP + r"\d{4}|[2-9]\d{3}[\s-]?\d{4}[\s-]?\d{4}|(?:[xX*]{4}[\s-]?){2}\d{4})(?!\w)")
 RX_PAN = re.compile(r"(?<![A-Za-z0-9])[A-Za-z]{3}[PCHFATBLJGpchfatbljg][A-Za-z] ?\d{4} ?[A-Za-z](?![A-Za-z0-9])")
 # a labelled PAN-shaped value even when the 4th (entity) letter is not an official one ("PAN XYZQB9876C"),
 # and labelled government IDs with no fixed public format (voter ID / EPIC, passport, driving licence, ration card)
 RX_PAN_LABELLED = re.compile(r"(?i)(?<![A-Za-z])(?:pan|p\.a\.n\.?|पैन)(?:\s*(?:no\.?|number|card|कार्ड|नं\.?))?\s*[:#.=\-–]?\s*"
                              r"([A-Za-z]{5} ?\d{4} ?[A-Za-z])(?![A-Za-z0-9])")
-RX_GOV_LABELLED = re.compile(r"(?i)(?<![A-Za-z])(?:voter(?:\s?(?:id|no\.?|card))?|epic(?:\s?no)?|election\s+card|passport|driving\s+licen[cs]e|"
-                             r"\bdl|ration\s+card|मतदाता\s?पहचान|पासपोर्ट)(?:\s*(?:no\.?|number|#))?\s*[:#.=\-–]?\s*"
-                             r"((?=[A-Za-z0-9/\-]*\d{3})[A-Za-z0-9][A-Za-z0-9/\-]{5,19})(?![A-Za-z0-9])")
+# A slash immediately before dL identifies a measurement unit, not a licence label.
+# Optional regional prefixes contain digits; the main captured token must itself
+# contain three consecutive digits. Lookahead cannot borrow digits from later prose.
+RX_GOV_LABELLED = re.compile(
+    r"(?i)(?<![\w/])(?:voter(?:\s?(?:id|no\.?|card))?|epic(?:\s?no)?|election\s+card|passport|"
+    r"driving\s+licen[cs]e|dl|ration\s+card|मतदाता\s?पहचान|पासपोर्ट)(?!\w)"
+    r"(?:[ \t]*(?:no\.?|number|#))?[ \t]*[:#.=\-–]?[ \t]*"
+    r"((?:[A-Za-z]{1,5}\d{1,4}[ \t]+)?"
+    r"(?=[A-Za-z0-9/\-]{6,23}(?![A-Za-z0-9/\-]))"
+    r"[A-Za-z0-9/\-]*\d{3}[A-Za-z0-9/\-]*)(?![A-Za-z0-9/\-])")
 RX_PHONE = re.compile(
     _NB + r"(?:(?:\+|00)\s?91[\s.-]?|91[\s.-]|0)?\(?[6-9]\d{4}\)?(?:[.\-]|[ \t]*(?:\r?\n)?[ \t]*)\d{5}(?![\w])|"
     + _NB + r"(?:(?:\+|00)\s?91[\s.-]?|91[\s.-]|0)?\(?[6-9]\d{3}\)?[\s.-]\d{3}[\s.-]\d{3}(?![\w])|"
@@ -117,6 +126,41 @@ RX_PHONE = re.compile(
 # a 10-digit mobile written with ONE repeated separator in any grouping: "7 2 0 2 4 3 2 3 6 7",
 # "7256.325.533", "091-732-038-7333", "98-765-43210". Total digits are checked in code.
 RX_PHONE_SEP = re.compile(r"(?<![\w.+\-])(?:\+?0{0,2}91([ .\-])|0([ .\-])?)?([6-9]\d{0,4})( [.\-] |[ .\-])\d{1,5}(?:\4\d{1,5}){0,8}(?![\w]|[.\-]\d)")
+# mixed separators, slashes, parentheses and unicode dashes: "98.11-20 44 67", "98/11/20/44/67", "(981) 120-4467"
+_PHONE_FLEX_SEP = r"[ \t./()\-\u2010\u2011\u2012\u2013\u2014\u2212\u00b7\u2022\u2027\u30fb]"
+_RX_PHONE_FLEX = re.compile(
+    r"(?<![\w])(?:\+?[ \t]?0{0,2}91" + _PHONE_FLEX_SEP + r"?|0" + _PHONE_FLEX_SEP + r"?)?"
+    r"\(?(?:[6-9]\d{0,5})\)?(?:" + _PHONE_FLEX_SEP + r"{1,3}\d{1,6}){1,9}(?![\w])")
+# payment card in groups of four, including dots ("4111.1111.1111.1111"). Luhn keeps a
+# spaced batch or account that only looks like a card from swallowing the last group.
+_RX_CARD = re.compile(r"(?<![\w])(?:\d{4}[ \t.\-\u2013\u2014]){3}\d{3,7}(?![\w])")
+# UPI virtual payment address. Handles are the public PSP suffixes; a labelled UPI/VPA catches the rest.
+# A dotted domain is an email and is left to RX_EMAIL.
+_UPI_HANDLES = ("okhdfcbank|okicici|okaxis|oksbi|axisbank|hdfcbank|idfcbank|barodampay|freecharge|"
+                "jupiteraxis|unionbankofindia|paytm|ybl|ibl|axl|apl|upi|kotak|indus|federal|yesbank|"
+                "aubank|airtel|jio|hsbc|dbs|rbl|pnb|idbi|cnrb|mahb|iob|psb|tmb|sib|kvb|nsdl|ikwik|"
+                "waicici|wahdfcbank|wasbi|okbizaxis")
+_RX_UPI = re.compile(r"(?<![\w])[A-Za-z0-9][A-Za-z0-9._-]{1,63}@(?:" + _UPI_HANDLES + r")(?![A-Za-z0-9])", re.I)
+# Only label delimiters may precede the address: never greedily consume its username.
+_RX_UPI_CTX = re.compile(
+    r"(?i)\b(?:upi(?:[ \t]+(?:id|vpa))?|vpa|gpay|google[ \t]*pay|phonepe|bhim)\b"
+    r"(?:[ \t]*[:=\-][ \t]*|[ \t]+)"
+    r"(?<![\w.@+%\-])([A-Za-z0-9][A-Za-z0-9._-]{1,63}@[A-Za-z][A-Za-z0-9]{1,32})"
+    r"(?![\w.-])")
+_RX_EMAIL_OBF = re.compile(
+    r"(?i)(?<![\w])([A-Za-z0-9._%+\-]{1,64})[ \t]*(?:\[at\]|\(at\)|\{at\})[ \t]*"
+    r"((?:[A-Za-z0-9\-]+[ \t]*(?:\[dot\]|\(dot\)|\{dot\})[ \t]*)*[A-Za-z0-9\-]+)[ \t]*"
+    r"(?:\[dot\]|\(dot\)|\{dot\})[ \t]*([A-Za-z]{2,24})(?![\w])")
+# GSTIN (state code + PAN + entity + Z + check). nolink: a hospital's own GSTIN is on many bills.
+_RX_GSTIN = re.compile(r"(?<![A-Za-z0-9])\d{2}[A-Z]{5}\d{4}[A-Z][A-Z0-9]Z[A-Z0-9](?![A-Za-z0-9])", re.I)
+# Indian vehicle registration, including the Bharat series. nolink: an ambulance plate is shared.
+_VEH_STATES = ("AN|AP|AR|AS|BR|CG|CH|DD|DL|DN|GA|GJ|HP|HR|JH|JK|KA|KL|LA|LD|MH|ML|MN|MP|MZ|NL|"
+               "OD|OR|PB|PY|RJ|SK|TN|TR|TS|UK|UP|WB|UA|UL")
+_RX_VEHICLE = re.compile(
+    r"(?<![A-Za-z0-9])(?:(?:" + _VEH_STATES + r")[ \t-]?\d{1,2}[ \t-]?[A-Z]{1,3}[ \t-]?\d{3,4}"
+    r"|\d{2}[ \t-]?BH[ \t-]?\d{4}[ \t-]?[A-Z]{1,2})(?![A-Za-z0-9])", re.I)
+# a sentence-final period is punctuation, not another octet ("from 203.0.113.44.")
+_RX_IPV4 = re.compile(r"(?<![\w.])(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?![\w]|\.\d)")
 # spelled single digits (English / Hinglish / Devanagari Hindi), for numbers read out digit by digit
 DIGIT_WORDS = {}
 for _i, _ws in enumerate((("zero", "shunya", "sunya", "\u0936\u0942\u0928\u094d\u092f"), ("one", "ek", "\u090f\u0915"),
@@ -380,6 +424,33 @@ def norm_phone(s):
     if len(d) >= 10 and d[-10] in "6789":
         return d[-10:]
     return d.lstrip("0") or d
+
+
+def luhn_ok(num):
+    """Payment-card checksum. Used only to accept a grouped 13-19 digit run as one identifier."""
+    s = 0
+    alt = False
+    for ch in reversed(num):
+        n = ord(ch) - 48
+        if alt:
+            n *= 2
+            if n > 9:
+                n -= 9
+        s += n
+        alt = not alt
+    return s % 10 == 0
+
+
+def _phone_core(d):
+    """Last-10 mobile digits when d is a 10-digit mobile or the same with a 0/91 prefix."""
+    if len(d) not in (10, 11, 12, 13) or not d.isdigit():
+        return None
+    core = d[-10:]
+    if core[0] not in "6789":
+        return None
+    if len(d) != 10 and d[:-10] not in ("0", "91", "091", "0091"):
+        return None
+    return core
 
 
 class Detector:
@@ -967,6 +1038,36 @@ class Detector:
                 out.append(Span(a, b, "AGE", w, meta={"age": v}))
         return out
 
+    def _flex_phones(self, norm, spans):
+        """10-digit mobiles whose groups use mixed separators, slashes or brackets.
+
+        A pure date is left alone. Decimal/slash runs require a contact label;
+        clinical shields are never removed by this permissive fallback."""
+        for m in _RX_PHONE_FLEX.finditer(norm):
+            raw = m.group(0)
+            if re.search(r"[A-Za-z]", raw):
+                continue
+            groups = re.findall(r"\d+", raw)
+            if len(groups) < 2:
+                continue
+            if len(groups) == 3 and len(groups[-1]) == 4 and 1900 <= int(groups[-1]) <= 2099:
+                continue
+            core = _phone_core("".join(groups))
+            if not core:
+                continue
+            a, b = m.start(), m.end()
+            if "." in raw or "/" in raw:
+                before = norm[max(0, a - 64):a]
+                if not re.search(
+                    r"(?i)\b(?:phone|mobile|mob|tel(?:ephone)?|contact|call|whatsapp|wa|ph)"
+                    r"[ \t]*(?:(?:no\.?|number)[ \t]*)?[:=\-]?[ \t]*$", before
+                ):
+                    continue
+            if any(s.kind == "MED" and a < s.end and s.start < b for s in spans):
+                continue
+            spans.append(Span(a, b, "PHONE", core))
+        return spans
+
     # ---------------------------------------------------------------- main entry
     def detect(self, text, field_hint=None, order=None, year=None):
         """Return resolved list of Spans for text."""
@@ -992,6 +1093,13 @@ class Detector:
             spans.append(Span(m.start(), m.end(), "ABHA", m.group(0)))
         for m in RX_EMAIL.finditer(norm):
             spans.append(Span(m.start(), m.end(), "EMAIL", m.group(0)))
+        for m in _RX_EMAIL_OBF.finditer(norm):
+            mid = re.sub(r"(?i)\s*(?:\[dot\]|\(dot\)|\{dot\})\s*", ".", m.group(2))
+            spans.append(Span(m.start(), m.end(), "EMAIL", re.sub(r"\.+", ".", "%s@%s.%s" % (m.group(1), mid, m.group(3))).lower()))
+        for m in _RX_UPI.finditer(norm):
+            spans.append(Span(m.start(), m.end(), "EMAIL", m.group(0).lower(), meta={"nolink": True}))
+        for m in _RX_UPI_CTX.finditer(norm):
+            spans.append(Span(m.start(1), m.end(1), "EMAIL", m.group(1).lower(), meta={"nolink": True}))
         for m in RX_ABHA.finditer(norm):
             d = digits_only(m.group(0))
             ctx = norm[max(0, m.start() - 30):m.start()].lower()
@@ -1013,17 +1121,24 @@ class Detector:
                 spans.append(Span(m.start(), m.end(), "PAN", re.sub(r"\s", "", w).upper()))
         for m in RX_PAN_LABELLED.finditer(norm):
             spans.append(Span(m.start(1), m.end(1), "PAN", re.sub(r"\s", "", m.group(1)).upper(), meta={"labelled": True}))
+        for m in _RX_GSTIN.finditer(norm):
+            # outranks the PAN embedded in the GSTIN so the state code and check characters go too
+            spans.append(Span(m.start(), m.end(), "ID", m.group(0).upper(), meta={"nolink": True, "prio": 90}))
         for m in RX_GOV_LABELLED.finditer(norm):
             spans.append(Span(m.start(1), m.end(1), "ID", m.group(1).upper(), meta={"labelled": True}))
         for m in RX_PHONE.finditer(norm):
             spans.append(Span(m.start(), m.end(), "PHONE", norm_phone(m.group(0))))
         for m in RX_PHONE_SEP.finditer(norm):
-            d = digits_only(m.group(0))
-            core10 = d[-10:]
-            if len(d) in (10, 11, 12, 13) and core10[0] in "6789" and (len(d) == 10 or d[:-10] in ("0", "91", "091", "0091")):
+            core10 = _phone_core(digits_only(m.group(0)))
+            if core10:
                 # a dosing-grid shield ("1-0-1") inside a whole 10-digit number is part of the number
                 spans = [x for x in spans if not (x.kind == "MED" and m.start() <= x.start and x.end <= m.end())]
                 spans.append(Span(m.start(), m.end(), "PHONE", core10))
+        spans = self._flex_phones(norm, spans)
+        for m in _RX_CARD.finditer(norm):
+            d = digits_only(m.group(0))
+            if 13 <= len(d) <= 19 and luhn_ok(d):
+                spans.append(Span(m.start(), m.end(), "ID", d, meta={"prio": 89, "nolink": True}))
         for a, b, dg in spelled_numbers(norm):
             kind = "PHONE" if len(dg) >= 10 and dg[-10] in "6789" else "ID"
             spans.append(Span(a, b, kind, dg[-10:] if kind == "PHONE" else dg))
@@ -1050,6 +1165,20 @@ class Detector:
                 spans.append(Span(m.start(), m.end(), "ID", w.upper()))
         for m in RX_LONGNUM.finditer(norm):
             spans.append(Span(m.start(), m.end(), "ID", m.group(0)))
+        for m in _RX_VEHICLE.finditer(norm):
+            if any(s.kind == "MED" and m.start() < s.end and s.start < m.end() for s in spans):
+                continue
+            spans.append(Span(m.start(), m.end(), "ID", re.sub(r"\s+", "", m.group(0)).upper(), meta={"nolink": True}))
+        for m in _RX_IPV4.finditer(norm):
+            octets = [int(x) for x in m.group(0).split(".")]
+            if all(o < 10 for o in octets):
+                continue
+            pre = norm[max(0, m.start() - 16):m.start()]
+            if re.search(r"(?i)vers(?:ion)?\.?\s*$|\bv\s*$", pre):
+                continue
+            if any(s.kind == "MED" and m.start() < s.end and s.start < m.end() for s in spans):
+                continue
+            spans.append(Span(m.start(), m.end(), "ID", m.group(0), meta={"nolink": True}))
         # dates
         from .dates import find_dates
         for a, b, d, f in find_dates(norm, order, year):
@@ -1566,7 +1695,7 @@ class Detector:
         lab = [s for s in spans if s.meta.get("labelled")]
         if lab:   # an explicitly labelled identifier ("PAN ...", "Passport no. ...") outranks the code-shaped MED guard
             spans = [s for s in spans if not (s.kind == "MED" and any(s.start < l.end and l.start < s.end for l in lab))]
-        spans = sorted(spans, key=lambda s: (-PRIORITY.get(s.kind, 0), -role_rank.get(s.role, 0), -(s.end - s.start), s.start))
+        spans = sorted(spans, key=lambda s: (-s.meta.get("prio", PRIORITY.get(s.kind, 0)), -role_rank.get(s.role, 0), -(s.end - s.start), s.start))
         chosen = []
         occupied = []
         for sp in spans:
